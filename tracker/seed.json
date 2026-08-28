@@ -1,0 +1,114 @@
+{
+  "phases": [
+    {
+      "num": "01",
+      "name": "tool-calling",
+      "gate": "Python fluency — typed Python, uv, pytest, pydantic, async.",
+      "build": "One script. One model call. One tool with a real side effect — hits an API, writes a file, queries a database. No framework.",
+      "verify": "The tool fires with correct arguments; you see the effect.",
+      "wall": "Arguments don't validate; the script crashes.",
+      "earned": "The schema is a contract and the model is an unreliable client. Validation, and feeding errors back into the loop rather than throwing.",
+      "breaks": [
+        "Request a call whose argument the model cannot know",
+        "Two tools with confusable descriptions",
+        "Tool returns an error",
+        "Required enum + a request matching no value"
+      ]
+    },
+    {
+      "num": "02",
+      "name": "the-loop",
+      "gate": "phase 01 closed",
+      "build": "While-loop over a message list. Tool results appended. Stop condition. ~100 lines, no framework. Then three real tools, pointed at an actual recurring annoyance in your own work.",
+      "verify": "It completes a task you would otherwise do by hand. Then use it daily for a week — that week is part of the deliverable.",
+      "wall": "Works at step 3, degrades by step 15, and you can't see why. Killing it loses everything.",
+      "earned": "Trajectory logging (just enough to debug). Context accumulation as root cause. Checkpointing. The real lesson: an agent is a stateful long-running job, not a function call.",
+      "breaks": [
+        "A task needing 15+ steps",
+        "A slow tool",
+        "An intermittently failing tool",
+        "Kill the process mid-run"
+      ]
+    },
+    {
+      "num": "03",
+      "name": "search",
+      "gate": "phase 02 closed",
+      "build": "BM25 from scratch over your own documents — Arabic, ideally. Inverted index, term weighting, no retrieval libraries. Then wire it in as a tool the phase-02 agent calls.",
+      "verify": "Type a query, judge results by eye. Feedback in seconds.",
+      "wall": "Results are bad on some queries and you cannot tell whether the cause is chunking, tokenisation, or ranking.",
+      "earned": "recall@k and a golden set, bootstrapped from documents whose answers you already know. Then embeddings and hybrid fusion — added *to* BM25 and measured against it, never replacing it blind.",
+      "breaks": [
+        "A query whose answer exists but ranks 40th",
+        "A document that should never match but does",
+        "Arabic queries using different morphological forms of one root"
+      ]
+    },
+    {
+      "num": "04",
+      "name": "serving",
+      "gate": "Linux + SSH + Docker + nvidia-smi. Rent the GPU before reading anything.",
+      "build": "Serve an open-weights model with vLLM. Point a minimal gateway at both it and the hosted API. Route your own tasks through both.",
+      "verify": "tokens/sec, cost per task, quality on your tasks. Numbers you generated yourself.",
+      "wall": "You can't predict when it will OOM, and can't explain why throughput scales with batching while latency doesn't.",
+      "earned": "KV-cache arithmetic. Paged attention. Continuous batching. Memory-bound decode vs compute-bound prefill.",
+      "breaks": [
+        "Raise concurrency until it OOMs",
+        "Raise context length until it OOMs differently",
+        "Run a quantised variant and hunt for degradation on your tasks"
+      ]
+    },
+    {
+      "num": "05",
+      "name": "reassess",
+      "gate": "phases 01-04 closed",
+      "build": "Not a build phase. Four working systems exist; pick a direction by pull, not by plan. Candidates: agent reliability and durability · retrieval quality · inference performance · Arabic-specific model behaviour.",
+      "verify": "One paragraph in README.md naming the direction and why. Then a new phase spec written to §3.",
+      "wall": "",
+      "earned": "",
+      "breaks": []
+    }
+  ],
+  "parked": [
+    [
+      "Eval methodology — taxonomy, LLM judge, judge validation",
+      "Two versions exist and you genuinely can't tell which is better"
+    ],
+    [
+      "Statistics for evals — sample size, paired tests, CIs",
+      "Your eval reads 74% vs 71% and you must decide whether to ship"
+    ],
+    [
+      "Context engineering — compaction, budgeting",
+      "Long-run degradation is your top recurring failure"
+    ],
+    [
+      "Guardrails, injection defense",
+      "Your agent reads something a stranger could have written"
+    ],
+    [
+      "Durable execution — Temporal, DBOS",
+      "Losing a mid-run trajectory has cost you real time twice"
+    ],
+    [
+      "Orchestration, subagents",
+      "A single agent with good tools has provably plateaued"
+    ],
+    [
+      "LangGraph (read source; skip LangChain)",
+      "You've written your own loop and want to know what they add"
+    ],
+    [
+      "Adaptation — LoRA, distillation, DPO",
+      "Prompting has plateaued on a narrow task you care about"
+    ],
+    [
+      "Transformer from scratch",
+      "A model-behaviour question you actually care about — likely Arabic tokenisation"
+    ],
+    [
+      "Compute substrate — roofline, bandwidth vs FLOPs",
+      "You're optimising serving and hit a ceiling you can't explain"
+    ]
+  ]
+}

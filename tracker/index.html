@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ai-lab tracker</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <div class="brand">ai&#8209;lab <span class="dim">tracker</span></div>
+
+  <nav id="tabs">
+    <button data-tab="dashboard" class="active">dashboard</button>
+    <button data-tab="sql">sql</button>
+  </nav>
+
+  <div id="nowchip" class="nowchip" hidden></div>
+  <div id="timerchip" class="nowchip timer" hidden></div>
+
+  <div class="right">
+    <span id="status" class="dim mini">connecting…</span>
+    <button class="ghost" data-action="toggle-drawer" title="sessions, interest queue, parked registry">
+      ☰ side panel <span id="panelbadge" class="badge" hidden></span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <section id="tab-dashboard" class="tab"></section>
+  <section id="tab-sql" class="tab" hidden></section>
+</main>
+
+<input type="file" id="restoreFile" accept="application/json" hidden />
+<div id="backdrop" data-action="close-drawer" hidden></div>
+<aside id="drawer" class="drawer">
+  <div class="drawer-head">
+    <span class="sec-title">side panel</span>
+    <button class="x" data-action="close-drawer" title="close (esc)">✕</button>
+  </div>
+  <div id="drawer-body"></div>
+</aside>
+
+<div id="toast" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
