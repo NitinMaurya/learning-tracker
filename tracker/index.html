@@ -3,45 +3,50 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
 <title>ai-lab tracker</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<header>
-  <div class="brand">ai&#8209;lab <span class="dim">tracker</span></div>
 
-  <nav id="tabs">
-    <button data-tab="dashboard" class="active">dashboard</button>
-    <button data-tab="sql">sql</button>
+<header class="bar">
+  <div class="brand"><span class="mark"></span>ai-lab<span class="sub">tracker</span></div>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="views">
+    <button data-tab="dashboard" role="tab" aria-selected="true">concepts</button>
+    <button data-tab="sql" role="tab" aria-selected="false">sql</button>
   </nav>
 
-  <div id="nowchip" class="nowchip" hidden></div>
-  <div id="timerchip" class="nowchip timer" hidden></div>
+  <div id="nowchip" class="chip" hidden></div>
+  <div id="timerchip" class="chip live" hidden></div>
 
   <div class="right">
-    <span id="status" class="dim mini">connecting…</span>
-    <button class="ghost" data-action="toggle-drawer" title="sessions, interest queue, parked registry">
-      ☰ side panel <span id="panelbadge" class="badge" hidden></span>
+    <span id="status" class="chip">connecting</span>
+    <button class="btn" data-action="toggle-drawer" aria-haspopup="dialog"
+            title="sessions, interest queue, parked registry">
+      side panel <span id="panelbadge" class="badge" hidden></span>
     </button>
   </div>
 </header>
 
 <main>
-  <section id="tab-dashboard" class="tab"></section>
-  <section id="tab-sql" class="tab" hidden></section>
+  <section id="tab-dashboard" class="tab" role="tabpanel"></section>
+  <section id="tab-sql" class="tab" role="tabpanel" hidden></section>
 </main>
 
 <input type="file" id="restoreFile" accept="application/json" hidden />
-<div id="backdrop" data-action="close-drawer" hidden></div>
-<aside id="drawer" class="drawer">
+
+<div id="backdrop" class="scrim" data-action="close-drawer" hidden></div>
+
+<aside id="drawer" class="drawer" role="dialog" aria-label="side panel">
   <div class="drawer-head">
-    <span class="sec-title">side panel</span>
-    <button class="x" data-action="close-drawer" title="close (esc)">✕</button>
+    side panel
+    <button class="iconbtn" data-action="close-drawer" title="close (esc)" aria-label="close side panel"></button>
   </div>
   <div id="drawer-body"></div>
 </aside>
 
-<div id="toast" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
 
 <script type="module" src="app.js"></script>
 </body>

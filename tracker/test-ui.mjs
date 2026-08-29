@@ -71,6 +71,7 @@ const mk = (dataset, extra = {}) => {
 const input = (dataset, value, extra = {}) =>
   ({ tagName: 'INPUT', type: 'text', value, dataset, _key: 'Enter', closest: () => null, preventDefault() {}, ...extra });
 const dash = () => captured['#tab-dashboard'] || '';
+const drawer = () => captured['#drawer-body'] || '';
 const has = (s) => dash().includes(s);
 let failures = 0;
 const check = (label, cond) => { if (!cond) failures++; console.log((cond ? '  ok  ' : ' FAIL ') + label); };
@@ -80,6 +81,14 @@ const c2 = (await sql("SELECT id FROM concepts WHERE num='02'"))[0].id;
 
 check('renders concepts, not phases', has('tool-calling') && !/>phases</.test(dash()));
 check('analytics stat strip is gone', !has('class="stats"'));
+check('icons are authored svg, not emoji or unicode glyphs',
+  has('<svg class="i"') && !/[\u{1F300}-\u{1FAFF}\u{2190}-\u{27BF}]/u.test(dash()));
+// the ban covers the interface's own copy; seeded text is the user's spec.md, quoted verbatim
+check('no em-dash in the interface copy', await (async () => {
+  const fs = await import('node:fs');
+  return ['app.js', 'graph.js', 'icons.js', 'index.html', 'style.css']
+    .every((f) => !fs.readFileSync(new URL(f, import.meta.url), 'utf8').includes('\u2014'));
+})());
 // inline onclick handlers break document-level delegation — never reintroduce them
 check('no inline onclick blocks event delegation', !/onclick=/.test(dash()));
 check('manual session form removed', !has('data-action="add-session"') && !has('log one by hand'));
@@ -105,14 +114,13 @@ stub('#edit-box').value = 'notes/tool-schemas.md';
 await fire('click', mk({ action: 'save-resolution', id: conf.id }));
 const conf2 = (await sql(`SELECT * FROM confusions WHERE id='${conf.id}'`))[0];
 check('resolution kept, entry not deleted', conf2.resolved === 1 && conf2.resolution === 'notes/tool-schemas.md');
-const drawer = () => captured['#drawer-body'] || '';
 check('sessions, queue and parked moved to the side panel',
   !has('interest queue') && !has('parked registry') && drawer().includes('interest queue') &&
   drawer().includes('parked registry') && drawer().includes('sessions'));
 check('rail is a roadmap > track tree on the left, concepts to its right',
   dash().indexOf('class="rail"') < dash().indexOf('data-key="concepts"') &&
-  has('rmhead') && has('data-action="select-track"'));
-check('tracks show their own done count', /data-action="select-track"[\s\S]{0,300}0\/5/.test(dash()));
+  has('rm-head') && has('data-action="select-track"'));
+check('tracks show their own done count', /data-action="select-track"[\s\S]{0,400}0\/5/.test(dash()));
 
 
 // backup/restore belong to the sql tab, not the header
@@ -158,7 +166,7 @@ check('document listed in the concept', has('trace.log'));
 await fire('click', mk({ action: 'start-timer', id: c1 }));
 check('timer starts and shows a countdown', has('timer-count') && !!JSON.parse(store['ai-lab-timer'] || 'null'));
 check('starting a session moves the concept to building', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'building');
-check('rail marks the track holding live work', has('railtimer'));
+check('rail marks the track holding live work', /class="live"/.test(dash()));
 stub('#timer-note').value = 'wired the first tool call';
 await fire('click', mk({ action: 'stop-timer' }));
 const sess = (await sql('SELECT * FROM sessions'))[0];
@@ -197,7 +205,7 @@ await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,ear
   + " VALUES ('k-I3','I3','KV cache mechanics','not started','','','','','',0,'tr-2',3.0,'compute the cache for a 7B model')");
 await fire('click', mk({ action: 'select-track', id: 'tr-2' }));
 check('selecting a track swaps the concepts column', has('KV cache mechanics') && !has('tool-calling'));
-check('a light concept shows hours and no unit counts', has('3h') && !/KV cache[\s\S]{0,300}broken/.test(dash()));
+check('a light concept shows hours and no unit counts', has('3h') && !/KV cache[\s\S]{0,400}broken/.test(dash()));
 await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));
 check('opening a light concept shows its practical checkpoint',
   has('practical checkpoint') && has('compute the cache for a 7B model'));
@@ -278,11 +286,11 @@ const c3 = (await sql("SELECT id FROM concepts WHERE num='03'"))[0].id;
 const c5 = (await sql("SELECT id FROM concepts WHERE num='05'"))[0].id;
 await sql(`INSERT INTO edges VALUES ('e-test', '${c5}', '${c3}')`);
 await fire('click', mk({ action: 'set-view', view: 'list' }));
-check('gating follows the graph, not list position', has('gated · concept 05'));
+check('gating follows the graph, not list position', has('gated by concept 05'));
 
 await sql("DELETE FROM edges WHERE id = 'e-test'");
 await fire('click', mk({ action: 'set-view', view: 'list' }));
-check('deleting the edge releases the gate', !has('gated · concept 05'));
+check('deleting the edge releases the gate', !has('gated by concept 05'));
 
 await sql(`INSERT INTO edges VALUES ('e-test2', '${c5}', '${c3}')`);
 await fire('click', mk({ action: 'apply-order' }));

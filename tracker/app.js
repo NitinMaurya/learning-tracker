@@ -1,5 +1,6 @@
 import { boot, all, run, save, load, exportJson, upload, deleteDoc, q, uid, today, now, TABLES } from './api.js';
 import { graphHtml, mountGraph, topoOrder, autoPos } from './graph.js';
+import { icon, fileIcon } from './icons.js';
 
 /* ---------- utils ---------- */
 
@@ -48,7 +49,7 @@ function toast(msg) {
 const touch = (id) => run(`UPDATE phases SET last_touched = ${q(today())} WHERE id = ${q(id)}`);
 
 const relDay = (d) => {
-  if (!d) return '—';
+  if (!d) return 'not yet';
   const days = Math.round((new Date(today()) - new Date(d)) / 86400000);
   return days === 0 ? 'today' : days === 1 ? 'yesterday' : days > 0 ? `${days}d ago` : d;
 };
@@ -68,13 +69,13 @@ const clock = (ms) => {
 };
 
 async function startTimer(p) {
-  if (timer && timer.id !== p.id && !confirm(`A session on concept ${timer.num} is still running. Stop it and start this one?`))
+  if (timer && timer.id !== p.id && !confirm(`A session on ${timer.num} is still running. Stop it and start this one?`))
     return;
   if (timer) await stopTimer(false, true);
   timer = { id: p.id, num: p.num, name: p.name, startedAt: Date.now(), kind: state.seKind };
   persistTimer();
   if (p.status === 'not started') await run(`UPDATE phases SET status = 'building' WHERE id = ${q(p.id)}`);
-  await after(`session started — 60:00 on concept ${p.num}`);
+  await after(`session started, 60:00 on ${p.num}`);
 }
 
 async function stopTimer(auto = false, quiet = false) {
@@ -90,7 +91,7 @@ async function stopTimer(auto = false, quiet = false) {
   );
   await run(`UPDATE phases SET last_touched = ${q(today())} WHERE id = ${q(t.id)}`);
   if (quiet) return;
-  await after(auto ? `the hour is up — ${mins}m logged on concept ${t.num}` : `stopped — ${mins}m logged`);
+  await after(auto ? `the hour is up, ${mins}m logged on ${t.num}` : `stopped, ${mins}m logged`);
 }
 
 function tick() {
@@ -101,35 +102,37 @@ function tick() {
   }
   const left = remainingMs();
   chip.hidden = false;
-  chip.innerHTML = `⏱ <b>${clock(left)}</b> · concept ${esc(timer.num)}`;
+  chip.innerHTML = `${icon('clock', { size: 13 })} <b>${clock(left)}</b> ${esc(timer.num)}`;
   const inline = $('#timer-count');
   if (inline) inline.textContent = clock(left);
-  document.querySelectorAll('.timer-bar > i').forEach((i) => (i.style.width = `${(1 - left / TIMER_MS) * 100}%`));
+  document.querySelectorAll('.timer .meter > i').forEach((i) => (i.style.width = `${(1 - left / TIMER_MS) * 100}%`));
   if (left <= 0) stopTimer(true);
 }
 setInterval(tick, 1000);
 
 /* ---------- shared ui bits ---------- */
 
-function section(key, title, count, body, { head = '', pad = true } = {}) {
+function panel(key, title, count, body, { head = '', flush = false } = {}) {
   const open = state.sections[key];
-  return `<div class="card ${open ? 'open' : ''}">
-    <div class="sec-head" data-action="toggle-sec" data-key="${key}">
-      <span class="chev">▶</span>
-      <span class="sec-title">${esc(title)}</span>
+  return `<section class="panel ${open ? 'open' : ''}">
+    <div class="panel-head" data-action="toggle-sec" data-key="${key}" role="button" tabindex="0"
+         aria-expanded="${open}">
+      ${icon('chevron')}
+      <span class="title">${esc(title)}</span>
       ${count !== null && count !== undefined ? `<span class="count">${count}</span>` : ''}
       <span class="right">${head}</span>
     </div>
-    ${open ? `<div class="sec-body" ${pad ? '' : 'style="padding:0"'}>${body}</div>` : ''}
-  </div>`;
+    ${open ? `<div class="panel-body ${flush ? 'flush' : ''}">${body}</div>` : ''}
+  </section>`;
 }
 
-const statusPill = (s) => `<span class="pill ${s.replace(' ', '-')}">${esc(s)}</span>`;
+// Status reads as shape first: ring, filled dot, barred ring, filled grey.
+const statusHtml = (s) =>
+  `<span class="status ${s.replace(' ', '-')}"><span class="glyph"></span>${esc(s)}</span>`;
 
-const barHtml = (done, total) => {
+const meter = (done, total) => {
   const pct = total ? Math.round((done / total) * 100) : 0;
-  return `<div class="row"><div class="bar"><i style="width:${pct}%"></i></div>
-    <span class="dim mini">${done}/${total}</span></div>`;
+  return `<span class="meter" role="img" aria-label="${done} of ${total}"><i style="width:${pct}%"></i></span>`;
 };
 
 /* ---------- data ---------- */
@@ -167,7 +170,7 @@ async function model() {
 }
 
 // A concept is gated by its prerequisites (graph edges). With no edges drawn it
-// falls back to "the one before it in the list", which is spec §4's default.
+// falls back to "the one before it in the list", which is spec section 4's default.
 function blockedBy(phases, i) {
   const p = phases[i];
   if (p.prereqs?.length) {
@@ -199,67 +202,67 @@ async function renderDashboard() {
   const firedParked = parked.filter((p) => p.fired).length;
   const current = phases.find((p) => p.status === 'walled') || phases.find((p) => p.status === 'building');
 
-  // selection: explicit choice, else the track you are working in, else the first
   let track = phases.tracks.find((t) => t.id === state.track);
   if (!track) track = phases.tracks.find((t) => current && t.id === current.track_id) || phases.tracks[0];
   state.track = track?.id || null;
   const inTrack = track ? track.concepts : [];
+  const trackEdges = phases.edges.filter(
+    (e) => inTrack.some((p) => p.id === e.from_id) && inTrack.some((p) => p.id === e.to_id)
+  );
 
   const chip = $('#nowchip');
   if (current) {
     chip.hidden = false;
-    chip.innerHTML = `now: <b>${esc(current.num)} ${esc(current.name)}</b> · ${esc(current.status)}`;
+    chip.innerHTML = `now <b>${esc(current.num)} ${esc(current.name)}</b>`;
   } else chip.hidden = true;
 
   const nextUp = current || inTrack.find((p) => p.status !== 'closed');
   const act = NEXT_ACTION[nextUp ? nextUp.status : 'closed'];
   const roadmap = phases.roadmaps.find((r) => r.id === track?.roadmap_id);
+  const trackDone = inTrack.filter((p) => p.status === 'closed').length;
 
   $('#tab-dashboard').innerHTML = `
-    ${nextUp
-      ? `<div class="now">
-          <div>
-            <div class="lbl">current</div>
-            <div class="who">${esc(nextUp.num)} — ${esc(nextUp.name)}</div>
-          </div>
-          ${statusPill(nextUp.status)}
-          <div class="do grow"><b>${act[0]}.</b> <span class="dim">${act[1]}</span></div>
-          ${timer
-            ? `<button class="mini-btn stop" data-action="stop-timer">■ stop ${clock(remainingMs())}</button>`
-            : `<button class="mini-btn" data-action="start-timer" data-id="${nextUp.id}">▶ start session</button>`}
-          <button class="mini-btn" data-action="open-phase" data-id="${nextUp.id}">open ↓</button>
-        </div>`
-      : ''}
+    <div class="shell">
+      <nav class="rail" aria-label="roadmaps">
+        <div class="rail-head">roadmaps</div>
+        ${treeRail(phases)}
+      </nav>
+      <div class="main">
+        ${nextUp
+          ? `<section class="now">
+              <div>
+                <div class="who"><span class="code">${esc(nextUp.num)}</span>${esc(nextUp.name)}</div>
+              </div>
+              ${statusHtml(nextUp.status)}
+              <p class="todo"><b>${act[0]}.</b> ${act[1]}</p>
+              <div class="acts">
+                ${timer
+                  ? `<button class="btn danger" data-action="stop-timer">${icon('stop')} stop ${clock(remainingMs())}</button>`
+                  : `<button class="btn primary" data-action="start-timer" data-id="${nextUp.id}">${icon('play')} start session</button>`}
+                <button class="btn" data-action="open-phase" data-id="${nextUp.id}">${icon('arrowDown')} open</button>
+              </div>
+            </section>`
+          : ''}
 
-    <div class="cols2">
-      <div class="rail">
-        ${section('progress', 'roadmaps', null, treeRail(phases), { pad: false })}
-      </div>
-      <div>
-    ${section('concepts', track ? `${roadmap ? roadmap.name.split('—')[0].trim() + ' / ' : ''}${track.title}` : 'concepts',
-      `${inTrack.filter((p) => p.status === 'closed').length}/${inTrack.length}`,
-      state.view === 'graph'
-        ? graphHtml(inTrack, phases.edges.filter((e) => inTrack.some((p) => p.id === e.from_id) && inTrack.some((p) => p.id === e.to_id)))
-        : phasesHtml(inTrack, phases), {
-      head: `<span class="seg">
-          <button data-action="set-view" data-view="list" class="${state.view === 'list' ? 'on' : ''}">list</button>
-          <button data-action="set-view" data-view="graph" class="${state.view === 'graph' ? 'on' : ''}">graph</button>
-        </span>
-        <button class="mini-btn" data-action="new-phase-form" style="margin-left:6px">+ concept</button>`,
-    })}
+        ${panel('concepts',
+          track ? `${roadmap ? esc(roadmap.name.split(' - ')[0].trim()) + ' / ' : ''}${esc(track.title)}` : 'concepts',
+          `${trackDone}/${inTrack.length}`,
+          state.view === 'graph' ? graphHtml(inTrack, trackEdges) : conceptsHtml(inTrack, phases),
+          { flush: state.view === 'list',
+            head: `<span class="seg">
+              <button data-action="set-view" data-view="list" aria-pressed="${state.view === 'list'}">${icon('list')} list</button>
+              <button data-action="set-view" data-view="graph" aria-pressed="${state.view === 'graph'}">${icon('graph')} graph</button>
+            </span>
+            <button class="btn quiet" data-action="new-phase-form">${icon('plus')} concept</button>` })}
       </div>
     </div>`;
 
-  if (state.view === 'graph') {
-    mountGraph($('#graph'), inTrack,
-      phases.edges.filter((e) => inTrack.some((p) => p.id === e.from_id) && inTrack.some((p) => p.id === e.to_id)),
-      GRAPH_CTX);
-  }
+  if (state.view === 'graph') mountGraph($('#graph'), inTrack, trackEdges, GRAPH_CTX);
 
   $('#drawer-body').innerHTML = `
-    ${section('log', 'sessions', null, sessionForm(sessions))}
-    ${section('queue', 'interest queue', `${openConf} open`, queueHtml(phases))}
-    ${section('parked', 'parked registry', `${firedParked}/${parked.length}`, parkedHtml(parked))}`;
+    ${panel('log', 'sessions', null, sessionForm(sessions))}
+    ${panel('queue', 'interest queue', `${openConf} open`, queueHtml(phases))}
+    ${panel('parked', 'parked registry', `${firedParked}/${parked.length}`, parkedHtml(parked))}`;
 
   const badge = $('#panelbadge');
   badge.hidden = !openConf;
@@ -273,85 +276,86 @@ async function renderDashboard() {
 function treeRail(phases) {
   return `${phases.roadmaps
     .map((r) => {
-      const collapsed = state.collapsed[r.id];
+      const openRm = !state.collapsed[r.id];
       const all = r.tracks.flatMap((t) => t.concepts);
       const done = all.filter((p) => p.status === 'closed').length;
-      return `<div class="rmgroup">
-        <div class="rmhead" data-action="toggle-roadmap" data-id="${r.id}">
-          <span class="chev" style="${collapsed ? '' : 'transform:rotate(90deg)'}">▶</span>
-          <span class="rmname">${esc(r.name)}</span>
-          <span class="right dim mini">${done}/${all.length}</span>
+      return `<div class="rm">
+        <div class="rm-head" data-action="toggle-roadmap" data-id="${r.id}" role="button" tabindex="0"
+             aria-expanded="${openRm}">
+          ${icon('chevron')}
+          <span class="name">${esc(r.name)}</span>
+          <span class="count">${done}/${all.length}</span>
         </div>
-        ${collapsed ? '' : `<ul class="list rail-list">
+        ${openRm ? `<ul class="tracks">
           ${r.tracks
             .map((t) => {
               const n = t.concepts.length;
               const d = t.concepts.filter((p) => p.status === 'closed').length;
-              const hot = t.concepts.some((p) => p.status === 'building' || p.status === 'walled');
-              return `<li class="row-link ${state.track === t.id ? 'here' : ''} ${d === n && n ? 'done' : ''}"
-                  data-action="select-track" data-id="${t.id}">
-                <span class="txt">${t.num ? `<span class="dim">${esc(t.num)}</span> ` : ''}${esc(t.title)}</span>
-                ${hot ? '<span class="railtimer">●</span>' : ''}
-                <span class="dim mini">${d}/${n}</span>
+              const live = t.concepts.some((p) => p.status === 'building' || p.status === 'walled');
+              return `<li data-action="select-track" data-id="${t.id}" role="button" tabindex="0"
+                  aria-current="${state.track === t.id}" class="${d === n && n ? 'complete' : ''}">
+                ${t.num ? `<span class="n">${esc(t.num)}</span>` : ''}
+                <span class="label" title="${esc(t.title)}">${esc(t.title)}</span>
+                ${live ? `<span class="live" title="work in progress">${icon('dot', { size: 10 })}</span>` : ''}
+                <span class="done">${d}/${n}</span>
               </li>`;
             })
             .join('')}
-        </ul>`}
+        </ul>` : ''}
       </div>`;
     })
     .join('')}
-    <div class="rmadd"><input type="text" id="rm-new" placeholder="+ roadmap  ⏎" data-action="add-roadmap" /></div>`;
+    <div class="rail-add">
+      <input type="text" id="rm-new" placeholder="new roadmap" data-action="add-roadmap" aria-label="add roadmap" />
+    </div>`;
 }
 
 /* ---------- concepts ---------- */
 
-function phasesHtml(phases, allPhases = phases) {
+function conceptsHtml(phases, allPhases = phases) {
   const cards = phases
     .map((p, i) => {
       const blocked = blockedBy(phases, i);
       const open = state.open === p.id;
+      const unit = isUnit(p);
       const done = p.breaks.filter((b) => b.done).length;
       const openConf = p.confusions.filter((c) => !c.resolved).length;
       const running = timer && timer.id === p.id;
 
-      const unit = isUnit(p);
-      const head = `<div class="phase-head ${unit ? '' : 'light'}" data-action="toggle-phase" data-id="${p.id}"
-          draggable="true" data-drag="${p.id}" title="drag to reorder">
-        <span class="grip" title="drag to reorder">⠿</span>
+      const row = `<div class="crow" data-action="toggle-phase" data-id="${p.id}" role="button" tabindex="0"
+          aria-expanded="${open}" draggable="true" data-drag="${p.id}">
+        <span class="grip" title="drag to reorder">${icon('grip')}</span>
         <input type="checkbox" data-action="done" data-id="${p.id}" ${p.status === 'closed' ? 'checked' : ''}
-          title="done — you can explain it and did the checkpoint" />
-        <span class="chev" style="${open ? 'transform:rotate(90deg)' : ''}">▶</span>
-        <span class="phase-name"><span class="n">${esc(p.num)}</span> ${esc(p.name)}</span>
-        ${p.hours ? `<span class="dim mini">${p.hours}h</span>` : ''}
-        ${unit || p.status !== 'not started' ? statusPill(p.status) : ''}
-        ${blocked && p.status !== 'closed' ? `<span class="pill locked">gated · ${esc(blocked)}</span>` : ''}
-        ${running ? `<span class="pill running">⏱ <span id="timer-count">${clock(remainingMs())}</span></span>` : ''}
+          aria-label="done" title="done: you can explain it and did the checkpoint" />
+        ${icon('chevron')}
+        <span class="name"><span class="code">${esc(p.num)}</span>${esc(p.name)}</span>
+        ${p.hours ? `<span class="hours">${p.hours}h</span>` : ''}
         <span class="right">
-          <span class="dim mini counts">
-            ${unit ? `${done}/${p.breaks.length} broken · ${p.can.length}✓ ${p.cannot.length}✗` : ''}${openConf ? ` · <span class="warnc">${openConf}?</span>` : ''}${p.notes.length ? ` · ${p.notes.length} notes` : ''}${p.docs.length ? ` · ${p.docs.length} files` : ''}
-          </span>
-          ${running
-            ? `<button class="mini-btn stop" data-action="stop-timer">■ stop</button>`
-            : `<button class="mini-btn" data-action="start-timer" data-id="${p.id}">▶ start</button>`}
-          <select data-action="status" data-id="${p.id}">
+          ${running ? `<span class="status building"><span class="glyph"></span><span id="timer-count">${clock(remainingMs())}</span></span>` : ''}
+          ${blocked && p.status !== 'closed' ? `<span class="status gated" title="prerequisite not closed">${icon('wall', { size: 13 })} gated by ${esc(blocked)}</span>` : ''}
+          ${unit ? `<span class="counts">${done}/${p.breaks.length} broken · ${p.can.length}/${p.cannot.length} exit${openConf ? ` · <span class="warn">${openConf} open</span>` : ''}</span>` : ''}
+          ${unit || p.status !== 'not started' ? statusHtml(p.status) : ''}
+          <select data-action="status" data-id="${p.id}" aria-label="status">
             ${STATUSES.map((s) => `<option ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </span>
       </div>`;
 
-      if (!open) return `<div class="phase-card ${running ? 'running' : ''}" data-card="${p.id}">${head}</div>`;
+      if (!open) return `<article class="concept ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}</article>`;
 
-      const gateWarn =
-        blocked && p.status !== 'not started' && p.status !== 'closed'
-          ? `<div class="warnbox">Gate not paid — ${esc(blocked)} is not closed.</div>`
-          : '';
-
-      return `<div class="phase-card is-open ${running ? 'running' : ''}" data-card="${p.id}">${head}
-        <div class="phase-body">
+      return `<article class="concept open ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}
+        <div class="cbody">
           ${running ? timerPanel() : ''}
-          ${gateWarn}
-          ${p.practical ? `<div class="field"><label>practical checkpoint</label><div class="ro">🧪 ${esc(p.practical)}</div></div>` : ''}
+          ${blocked && p.status !== 'not started' && p.status !== 'closed'
+            ? `<div class="warnbox">${icon('warning')} Gate not paid. ${esc(blocked)} is not closed.</div>`
+            : ''}
+
+          ${p.practical
+            ? `<div class="field"><label>practical checkpoint</label>
+                <div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
+            : ''}
           <div class="field"><label>gate</label><div class="ro">${esc(p.gate || 'none')}</div></div>
+
           ${['build', 'verify_txt', 'wall', 'earned']
             .map(
               (f) => `<div class="field">
@@ -365,91 +369,96 @@ function phasesHtml(phases, allPhases = phases) {
           <div class="field">
             <label>break on purpose</label>
             <ul class="list">
-              ${p.breaks.map((b) => breakItem(b, p.id)).join('') || '<li class="empty">nothing listed — add the failures you intend to cause</li>'}
+              ${p.breaks.map((b) => breakItem(b, p.id)).join('') ||
+                '<li class="empty">Nothing listed. Name the failures you intend to cause; if nothing broke, the build was too easy.</li>'}
             </ul>
-            <input type="text" placeholder="+ failure to induce  ⏎" data-action="add-break" data-id="${p.id}" style="margin-top:8px" />
+            <input type="text" placeholder="add a failure to induce" data-action="add-break" data-id="${p.id}"
+              aria-label="add a failure to induce" style="margin-top:8px" />
           </div>
 
-          <div class="grid2">
+          <div class="two">
             <div class="field">
-              <label>exit ✓ can explain without notes</label>
+              <label>${icon('check', { size: 13 })} can explain without notes</label>
               <ul class="list">${p.can.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
-              <input type="text" placeholder="+ claim  ⏎" data-action="add-claim" data-kind="can" data-id="${p.id}" style="margin-top:8px" />
+              <input type="text" placeholder="add a claim" data-action="add-claim" data-kind="can" data-id="${p.id}"
+                aria-label="add a claim you can explain" style="margin-top:8px" />
             </div>
             <div class="field">
-              <label>exit ✗ still can't explain</label>
+              <label>${icon('close', { size: 13 })} still can't explain</label>
               <ul class="list">${p.cannot.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
-              <input type="text" placeholder="+ gap — also logged as a confusion  ⏎" data-action="add-claim" data-kind="cannot" data-id="${p.id}" style="margin-top:8px" />
+              <input type="text" placeholder="add a gap, also filed as a confusion" data-action="add-claim" data-kind="cannot" data-id="${p.id}"
+                aria-label="add a gap" style="margin-top:8px" />
             </div>
           </div>
 
-          ${!canClose(p) && p.status !== 'closed'
-            ? `<div class="note">Closes only when <em>both</em> exit lists have entries. An empty "still can't explain" means you weren't honest, not that you're done.</div>`
+          ${!canClose(p) && p.status !== 'closed' && unit
+            ? `<p class="note">Closes only when <em>both</em> exit lists have entries. An empty "still can't explain" means you weren't honest, not that you're done.</p>`
             : ''}
 
-          <hr />
           ${confusionsBlock(p)}
           ${notesBlock(p, allPhases)}
           ${sourcesBlock(p)}
           ${docsBlock(p)}
         </div>
-      </div>`;
+      </article>`;
     })
     .join('');
 
   const form = state.newPhase
-    ? `<div class="phase-card is-open"><div class="phase-body" style="padding-top:14px">
+    ? `<div class="concept"><div class="cbody" style="padding:16px">
         <div class="row wrap">
-          <input type="text" id="np-num" placeholder="06" style="width:80px" />
-          <input type="text" id="np-name" placeholder="name" class="grow" />
-          <button class="act" data-action="add-phase">add</button>
-          <button class="mini-btn" data-action="cancel-new-phase">cancel</button>
+          <input type="text" id="np-num" placeholder="code" style="width:96px" aria-label="concept code" />
+          <input type="text" id="np-name" placeholder="name" class="grow" aria-label="concept name" />
+          <button class="btn primary" data-action="add-phase">add</button>
+          <button class="btn" data-action="cancel-new-phase">cancel</button>
         </div>
-        <div class="note" style="margin-top:8px">Concept 05's output is a new unit spec written to §3 — add it here once you've written it.</div>
       </div></div>`
     : '';
 
-  return cards + form;
+  return cards || form
+    ? cards + form
+    : '<p class="empty" style="padding:16px">No concepts in this track yet. Add one, or pick another track.</p>';
 }
 
 function timerPanel() {
   const left = remainingMs();
-  return `<div class="timer-panel">
-    <div class="row wrap">
-      <span class="tbig" id="timer-count">${clock(left)}</span>
-      <span class="dim mini">left of the hour · logging as <b>${esc(timer.kind)}</b></span>
-      <span class="right"><button class="mini-btn stop" data-action="stop-timer">■ stop &amp; log</button></span>
-    </div>
-    <div class="bar timer-bar" style="margin:8px 0"><i style="width:${(1 - left / TIMER_MS) * 100}%"></i></div>
-    <input type="text" id="timer-note" placeholder="what happened — written into the session when you stop" />
+  return `<div class="timer">
+    <span class="count" id="timer-count">${clock(left)}</span>
+    <span class="note">left of the hour, logging as <b>${esc(timer.kind)}</b></span>
+    <button class="btn danger" data-action="stop-timer" style="margin-left:auto">${icon('stop')} stop and log</button>
+    <span class="meter"><i style="width:${(1 - left / TIMER_MS) * 100}%"></i></span>
+    <input type="text" id="timer-note" placeholder="what happened, written into the session when you stop"
+      aria-label="session note" />
   </div>`;
 }
 
 function breakItem(b, phaseId) {
   if (state.edit?.kind === 'trace' && state.edit.id === b.id) {
     return `<li><div class="grow">
-      <div class="dim mini" style="margin-bottom:5px">${esc(b.label)}</div>
-      <textarea id="edit-box" placeholder="what actually broke — paste the trace">${esc(b.trace)}</textarea>
-      <div class="row" style="margin-top:6px">
-        <button class="act" data-action="save-trace" data-id="${b.id}" data-phase="${phaseId}">save</button>
-        <button class="mini-btn" data-action="cancel-edit">cancel</button>
+      <div class="note" style="margin-bottom:6px">${esc(b.label)}</div>
+      <textarea id="edit-box" placeholder="what actually broke, pasted from the run">${esc(b.trace)}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" data-action="save-trace" data-id="${b.id}" data-phase="${phaseId}">save</button>
+        <button class="btn" data-action="cancel-edit">cancel</button>
       </div>
     </div></li>`;
   }
-  return `<li class="${b.done ? 'checked' : ''}">
-    <input type="checkbox" data-action="break" data-id="${b.id}" data-phase="${phaseId}" ${b.done ? 'checked' : ''} />
+  return `<li class="${b.done ? 'done' : ''}">
+    <input type="checkbox" data-action="break" data-id="${b.id}" data-phase="${phaseId}" ${b.done ? 'checked' : ''}
+      aria-label="induced" />
     <span class="txt">
       <span class="main">${esc(b.label)}</span>
-      ${b.trace ? `<span class="sub">↳ ${esc(b.trace)}</span>` : ''}
+      ${b.trace ? `<span class="sub">${esc(b.trace)}</span>` : ''}
     </span>
-    <button class="x" data-action="edit-trace" data-id="${b.id}" title="${b.trace ? 'edit' : 'attach'} trace">✎</button>
-    <button class="x danger" data-action="del-break" data-id="${b.id}" title="delete">✕</button>
+    <button class="iconbtn" data-action="edit-trace" data-id="${b.id}"
+      title="${b.trace ? 'edit trace' : 'attach trace'}" aria-label="trace">${icon('edit')}</button>
+    <button class="iconbtn danger" data-action="del-break" data-id="${b.id}" title="delete" aria-label="delete">${icon('close')}</button>
   </li>`;
 }
 
 const claimItem = (c) => `<li>
   <span class="txt"><span class="main">${esc(c.text)}</span></span>
-  <button class="x danger" data-action="del-claim" data-id="${c.id}">✕</button>
+  <button class="iconbtn danger" data-action="del-claim" data-id="${c.id}" title="delete" aria-label="delete">${icon('close')}</button>
 </li>`;
 
 /* ---------- confusions (per concept) ---------- */
@@ -459,37 +468,37 @@ function confusionsBlock(p) {
   const resolved = p.confusions.filter((c) => c.resolved).length;
 
   return `<div class="field">
-    <label>confusions
-      ${resolved ? `<button class="mini-btn" data-action="toggle-resolved" style="float:right;margin-top:-3px">${state.showResolved ? 'hide' : 'show'} ${resolved} resolved</button>` : ''}
-    </label>
+    <div class="flabel">confusions
+      ${resolved ? `<span class="right"><button class="btn quiet" data-action="toggle-resolved">${state.showResolved ? 'hide' : 'show'} ${resolved} resolved</button></span>` : ''}
+    </div>
     <ul class="list">
-      ${rows.map(confItem).join('') || `<li class="empty">anything you couldn't explain goes here, dated</li>`}
+      ${rows.map(confItem).join('') ||
+        `<li class="empty">Anything you couldn't explain goes here, dated. Append only: resolving strikes it through, nothing is deleted.</li>`}
     </ul>
-    <input type="text" placeholder="+ what you couldn't explain  ⏎" data-action="add-conf"
-      data-id="${p.id}" data-num="${esc(p.num)}" id="conf-${p.id}" style="margin-top:8px" />
-    <div class="note" style="margin-top:6px">Append-only — resolving strikes through, nothing is deleted.</div>
+    <input type="text" placeholder="what you couldn't explain" data-action="add-conf"
+      data-id="${p.id}" data-num="${esc(p.num)}" id="conf-${p.id}" aria-label="log a confusion" style="margin-top:8px" />
   </div>`;
 }
 
 function confItem(c) {
   if (state.edit?.kind === 'resolution' && state.edit.id === c.id) {
     return `<li><div class="grow">
-      <div class="dim mini" style="margin-bottom:5px">${esc(c.text)}</div>
-      <input type="text" id="edit-box" placeholder="resolved → note filename or one line" value="${esc(c.resolution || '')}" />
-      <div class="row" style="margin-top:6px">
-        <button class="act" data-action="save-resolution" data-id="${c.id}">save</button>
-        <button class="mini-btn" data-action="cancel-edit">cancel</button>
+      <div class="note" style="margin-bottom:6px">${esc(c.text)}</div>
+      <input type="text" id="edit-box" placeholder="resolved: note filename or one line" value="${esc(c.resolution || '')}" />
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" data-action="save-resolution" data-id="${c.id}">save</button>
+        <button class="btn" data-action="cancel-edit">cancel</button>
       </div>
     </div></li>`;
   }
-  return `<li class="${c.resolved ? 'checked' : ''}">
-    <input type="checkbox" data-action="resolve-conf" data-id="${c.id}" ${c.resolved ? 'checked' : ''} />
+  return `<li class="${c.resolved ? 'done' : ''}">
+    <input type="checkbox" data-action="resolve-conf" data-id="${c.id}" ${c.resolved ? 'checked' : ''} aria-label="resolved" />
     <span class="txt">
       <span class="main">${esc(c.text)}</span>
-      ${c.resolved && c.resolution ? `<span class="sub">→ ${esc(c.resolution)}</span>` : ''}
+      ${c.resolved && c.resolution ? `<span class="sub">${esc(c.resolution)}</span>` : ''}
       <span class="sub">${esc((c.created_at || '').slice(0, 10))}</span>
     </span>
-    ${c.resolved ? `<button class="x" data-action="edit-resolution" data-id="${c.id}" title="resolution">✎</button>` : ''}
+    ${c.resolved ? `<button class="iconbtn" data-action="edit-resolution" data-id="${c.id}" title="resolution" aria-label="resolution">${icon('edit')}</button>` : ''}
   </li>`;
 }
 
@@ -508,24 +517,23 @@ function notesBlock(p, phases) {
         .filter(Boolean);
       return `<li>
         <span class="txt">
-          <span class="main">${esc(n.title)}</span>
-          ${others.map((o) => `<span class="pill tag">c${esc(o.num)}</span>`).join('')}
+          <span class="main">${esc(n.title)}${others.map((o) => `<span class="tag">${esc(o.num)}</span>`).join('')}</span>
           ${n.body ? `<span class="sub body">${esc(n.body)}</span>` : ''}
           <span class="sub">${esc(relDay((n.updated_at || '').slice(0, 10)))}</span>
         </span>
-        <button class="x" data-action="edit-note" data-id="${n.id}" data-phase="${p.id}" title="edit">✎</button>
-        <button class="x danger" data-action="del-note" data-id="${n.id}" title="delete">✕</button>
+        <button class="iconbtn" data-action="edit-note" data-id="${n.id}" data-phase="${p.id}" title="edit" aria-label="edit note">${icon('edit')}</button>
+        <button class="iconbtn danger" data-action="del-note" data-id="${n.id}" title="delete" aria-label="delete note">${icon('close')}</button>
       </li>`;
     })
     .join('');
 
   return `<div class="field">
-    <label>notes
-      <button class="mini-btn" data-action="new-note" data-phase="${p.id}" style="float:right;margin-top:-3px">+ note</button>
-    </label>
+    <div class="flabel">notes
+      <span class="right"><button class="btn quiet" data-action="new-note" data-phase="${p.id}">${icon('plus')} note</button></span>
+    </div>
     <ul class="list">
       ${editingNew ? `<li>${noteEditor(null, p, phases)}</li>` : ''}
-      ${list || (editingNew ? '' : '<li class="empty">a note is a claim, not a summary — the title states it, the body defends it</li>')}
+      ${list || (editingNew ? '' : '<li class="empty">A note is a claim, not a summary. The title states it, the body defends it to a smarter colleague.</li>')}
     </ul>
   </div>`;
 }
@@ -533,20 +541,22 @@ function notesBlock(p, phases) {
 function noteEditor(n, p, phases) {
   const tags = state.noteTags || [];
   return `<div class="grow">
-    <input type="text" id="note-title" placeholder="the claim — e.g. kv-cache memory is linear in batch × context"
-      value="${esc(n ? n.title : '')}" />
-    <textarea id="note-body" style="margin-top:6px;min-height:120px"
+    <input type="text" id="note-title" aria-label="claim"
+      placeholder="the claim, e.g. kv-cache memory is linear in batch x context" value="${esc(n ? n.title : '')}" />
+    <textarea id="note-body" style="margin-top:8px;min-height:120px"
       placeholder="defend it to a smarter colleague">${esc(n ? n.body : '')}</textarea>
-    <div class="row wrap" style="margin-top:8px;gap:5px">
-      <span class="dim mini">belongs to</span>
+    <div class="row wrap" style="margin-top:10px;gap:5px">
+      <span class="note">belongs to</span>
       ${phases
-        .map((x) => `<button class="chip ${tags.includes(x.id) ? 'on' : ''}" data-action="tag-note" data-id="${x.id}">c${esc(x.num)}</button>`)
+        .map((x) => `<button class="btn quiet" data-action="tag-note" data-id="${x.id}"
+          aria-pressed="${tags.includes(x.id)}"
+          style="${tags.includes(x.id) ? 'color:var(--accent);border-color:var(--accent-line);background:var(--accent-wash)' : ''}">${esc(x.num)}</button>`)
         .join('')}
     </div>
-    <div class="row" style="margin-top:8px">
-      <button class="act" data-action="save-note" data-id="${n ? n.id : 'new'}" data-phase="${p.id}">save</button>
-      <button class="mini-btn" data-action="cancel-edit">cancel</button>
-      <span class="note">tag every concept it explains — a note on KV-cache belongs to three at once</span>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" data-action="save-note" data-id="${n ? n.id : 'new'}" data-phase="${p.id}">save</button>
+      <button class="btn" data-action="cancel-edit">cancel</button>
+      <span class="note">Tag every concept it explains. A note on KV-cache belongs to three at once.</span>
     </div>
   </div>`;
 }
@@ -562,18 +572,19 @@ function sourcesBlock(p) {
           (r) => `<li>
             <span class="txt">
               <span class="main">${esc(r.changed)}</span>
-              <span class="sub"><a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(r.url)}</a></span>
+              <span class="sub">${icon('link', { size: 12 })} <a href="${esc(r.url)}" target="_blank" rel="noreferrer">${esc(r.url)}</a></span>
             </span>
-            <button class="x danger" data-action="del-source" data-id="${r.id}">✕</button>
+            <button class="iconbtn danger" data-action="del-source" data-id="${r.id}" title="delete" aria-label="delete source">${icon('close')}</button>
           </li>`
         )
-        .join('') || '<li class="empty">read only what the wall entitles you to — then log the one line</li>'}
+        .join('') ||
+        '<li class="empty">Read only what the wall entitles you to, then log the one line it changed.</li>'}
     </ul>
     <div class="row wrap" style="margin-top:8px">
-      <input type="text" id="sr-url-${p.id}" placeholder="https://…" style="flex:1 1 200px" />
-      <input type="text" id="sr-note-${p.id}" placeholder="one line: what it changed in your head  ⏎"
-        data-action="add-source-input" data-id="${p.id}" style="flex:2 1 260px" />
-      <button class="act" data-action="add-source" data-id="${p.id}">add</button>
+      <input type="text" id="sr-url-${p.id}" placeholder="https://" style="flex:1 1 200px" aria-label="source link" />
+      <input type="text" id="sr-note-${p.id}" placeholder="one line: what it changed in your head"
+        data-action="add-source-input" data-id="${p.id}" style="flex:2 1 260px" aria-label="what it changed" />
+      <button class="btn" data-action="add-source" data-id="${p.id}">add</button>
     </div>
   </div>`;
 }
@@ -583,16 +594,6 @@ function sourcesBlock(p) {
 const fmtSize = (b) =>
   b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 
-const fileIcon = (mime, name) => {
-  const ext = (name.split('.').pop() || '').toLowerCase();
-  if (/^image\//.test(mime)) return '🖼';
-  if (ext === 'pdf') return '📕';
-  if (['json', 'csv', 'tsv', 'parquet'].includes(ext)) return '🗂';
-  if (['log', 'txt', 'md'].includes(ext)) return '📄';
-  if (['py', 'js', 'ts', 'sh', 'ipynb'].includes(ext)) return '🧾';
-  return '📎';
-};
-
 function docsBlock(p) {
   return `<div class="field">
     <label>documents</label>
@@ -600,22 +601,21 @@ function docsBlock(p) {
       ${p.docs
         .map(
           (d) => `<li>
-            <span class="ficon">${fileIcon(d.mime || '', d.filename)}</span>
+            <span style="color:var(--fg-3);line-height:0;margin-top:2px">${fileIcon(d.filename)}</span>
             <span class="txt">
               <span class="main"><a href="/files/${encodeURIComponent(d.stored)}" target="_blank" rel="noreferrer">${esc(d.filename)}</a></span>
               <span class="sub">${fmtSize(d.size || 0)} · ${esc((d.created_at || '').slice(0, 10))}</span>
             </span>
-            <button class="x danger" data-action="del-doc" data-id="${d.id}">✕</button>
+            <button class="iconbtn danger" data-action="del-doc" data-id="${d.id}" title="delete" aria-label="delete file">${icon('close')}</button>
           </li>`
         )
         .join('')}
     </ul>
-    <label class="dropzone" data-phase="${p.id}">
+    <label class="drop" data-phase="${p.id}">
       <input type="file" multiple hidden data-action="upload" data-id="${p.id}" />
-      <span>drop files here or <u>choose</u></span>
-      <span class="dim mini">traces, logs, eval outputs, screenshots</span>
+      <span>${icon('upload')} drop files here or choose</span>
+      <span class="dim">traces, logs, eval outputs, screenshots</span>
     </label>
-    <div class="note" style="margin-top:6px">Files live in <span class="mono">tracker/files/</span>. §1.7 keeps PDFs out of the repo — gitignore that folder if you want the rule to hold.</div>
   </div>`;
 }
 
@@ -628,16 +628,16 @@ function queueHtml(phases) {
       ${open
         .map((c) => {
           const p = byNum.get(c.phase_num);
-          return `<li ${p ? `class="row-link" data-action="open-phase" data-id="${p.id}"` : ''}>
+          return `<li ${p ? `data-action="open-phase" data-id="${p.id}" role="button" tabindex="0" style="cursor:pointer"` : ''}>
             <span class="txt">
               <span class="main">${esc(c.text)}</span>
-              <span class="sub">${p ? `concept ${esc(p.num)} · ` : 'unfiled · '}${esc(relDay((c.created_at || '').slice(0, 10)))}</span>
+              <span class="sub">${p ? `${esc(p.num)} ${esc(p.name)} · ` : 'unfiled · '}${esc(relDay((c.created_at || '').slice(0, 10)))}</span>
             </span>
           </li>`;
         })
-        .join('') || '<li class="empty">nothing open</li>'}
+        .join('') || '<li class="empty">Nothing open. Confusions logged inside a concept surface here.</li>'}
     </ul>
-    <div class="note" style="margin-top:8px">Every open confusion, across concepts — pick by curiosity, not order. Entries that keep resurfacing are where depth is owed. Click one to jump to its concept.</div>`;
+    <p class="note" style="margin-top:10px">Every open confusion, across concepts. Pick by curiosity, not order. Entries that keep resurfacing are where depth is owed.</p>`;
 }
 
 /* ---------- parked ---------- */
@@ -646,23 +646,23 @@ function parkedHtml(rows) {
   return `<ul class="list">
       ${rows
         .map(
-          (r) => `<li class="${r.fired ? 'checked' : ''}">
-            <input type="checkbox" data-action="fire-parked" data-id="${r.id}" ${r.fired ? 'checked' : ''} />
+          (r) => `<li class="${r.fired ? 'done' : ''}">
+            <input type="checkbox" data-action="fire-parked" data-id="${r.id}" ${r.fired ? 'checked' : ''} aria-label="trigger fired" />
             <span class="txt">
               <span class="main">${esc(r.topic)}</span>
-              <span class="sub">${r.fired ? `fired ${esc(r.fired_at || '')} — write it up as a concept` : '⟶ ' + esc(r.trigger_text)}</span>
+              <span class="sub">${r.fired ? `fired ${esc(r.fired_at || '')}, write it up as a concept` : esc(r.trigger_text)}</span>
             </span>
-            <button class="x danger" data-action="del-parked" data-id="${r.id}">✕</button>
+            <button class="iconbtn danger" data-action="del-parked" data-id="${r.id}" title="delete" aria-label="delete">${icon('close')}</button>
           </li>`
         )
         .join('')}
     </ul>
-    <div class="row wrap" style="margin-top:10px">
-      <input type="text" id="pk-topic" placeholder="topic" class="grow" />
-      <input type="text" id="pk-trigger" placeholder="trigger" class="grow" />
-      <button class="act" data-action="add-parked">park</button>
+    <div class="row wrap" style="margin-top:12px">
+      <input type="text" id="pk-topic" placeholder="topic" class="grow" aria-label="parked topic" />
+      <input type="text" id="pk-trigger" placeholder="trigger" class="grow" aria-label="trigger" />
+      <button class="btn" data-action="add-parked">park</button>
     </div>
-    <div class="note" style="margin-top:8px">Parked ≠ skipped. Tick only when the trigger has actually fired — reading this list for interest is the failure mode it exists to prevent.</div>`;
+    <p class="note" style="margin-top:10px">Parked is not skipped. Tick only when the trigger has actually fired. Reading this list for interest is the failure mode it exists to prevent.</p>`;
 }
 
 /* ---------- sessions ---------- */
@@ -671,35 +671,32 @@ function sessionForm(sessions) {
   const shown = state.sessionsAll ? sessions : sessions.slice(0, 6);
   const dryOver = sessions.filter((s) => s.kind === 'dry' && (s.minutes || 0) > 90).length;
 
-  return `<div class="row wrap" style="gap:8px">
-      <span class="dim mini">next session logs as</span>
-      <div class="seg">
-        ${['build', 'break', 'read', 'dry']
-          .map((k) => `<button data-action="se-kind" data-kind="${k}" class="${state.seKind === k ? 'on' : ''}">${k}</button>`)
-          .join('')}
-      </div>
-    </div>
-    <div class="note" style="margin-top:8px">
+  return `<div class="flabel">next session logs as</div>
+    <span class="seg">
+      ${['build', 'break', 'read', 'dry']
+        .map((k) => `<button data-action="se-kind" data-kind="${k}" aria-pressed="${state.seKind === k}">${k}</button>`)
+        .join('')}
+    </span>
+    <p class="note" style="margin-top:10px">
       ${timer
-        ? `Running on concept ${esc(timer.num)} — stop it there, or <a href="#" data-action="stop-timer">stop &amp; log now</a>.`
-        : 'Sessions are only ever recorded by the timer — hit <b>▶ start</b> on a concept and it runs an hour, then logs itself.'}
-    </div>
-    ${dryOver ? `<div class="warnbox" style="margin-top:10px">${dryOver} dry session(s) over the 90-minute box (§1.5).</div>` : ''}
-    <hr />
-    <ul class="list">
+        ? `Running on ${esc(timer.num)} ${esc(timer.name)}. Stop it there, or <a href="#" data-action="stop-timer">stop and log now</a>.`
+        : 'Press start on a concept. It runs an hour and logs itself. There is no manual entry.'}
+    </p>
+    ${dryOver ? `<div class="warnbox" style="margin-top:12px">${icon('warning')} ${dryOver} dry session${dryOver > 1 ? 's' : ''} over the 90 minute box.</div>` : ''}
+    <ul class="list" style="margin-top:12px;border-top:1px solid var(--line);padding-top:4px">
       ${shown
         .map(
           (s) => `<li>
             <span class="txt">
-              <span class="main">${esc(s.note || '(no note)')}</span>
-              <span class="sub">${esc(s.on_date)} · ${esc(s.kind)}${s.phase_num ? ' · c' + esc(s.phase_num) : ''} · <span class="${s.kind === 'dry' && s.minutes > 90 ? 'err' : ''}">${s.minutes || 0}m</span></span>
+              <span class="main">${esc(s.note || 'no note')}</span>
+              <span class="sub">${esc(s.on_date)} · ${esc(s.kind)}${s.phase_num ? ' · ' + esc(s.phase_num) : ''} · <span class="${s.kind === 'dry' && s.minutes > 90 ? 'err' : ''}">${s.minutes || 0}m</span></span>
             </span>
-            <button class="x danger" data-action="del-session" data-id="${s.id}">✕</button>
+            <button class="iconbtn danger" data-action="del-session" data-id="${s.id}" title="delete" aria-label="delete session">${icon('close')}</button>
           </li>`
         )
-        .join('') || '<li class="empty">no sessions yet</li>'}
+        .join('') || '<li class="empty">No sessions yet. They appear when the timer stops.</li>'}
     </ul>
-    ${sessions.length > 6 ? `<button class="mini-btn" data-action="toggle-sessions" style="margin-top:8px">${state.sessionsAll ? 'show less' : `show all ${sessions.length}`}</button>` : ''}`;
+    ${sessions.length > 6 ? `<button class="btn quiet" data-action="toggle-sessions" style="margin-top:10px">${state.sessionsAll ? 'show less' : `show all ${sessions.length}`}</button>` : ''}`;
 }
 
 /* ---------- sql tab ---------- */
@@ -733,53 +730,51 @@ function renderSql() {
   const el = $('#tab-sql');
   if (el.dataset.built) return;
   el.dataset.built = '1';
-  el.innerHTML = `
-    <div class="card open">
-      <div class="sec-head" style="cursor:default">
-        <span class="sec-title">sqlite console</span>
+  el.innerHTML = `<div class="main">
+    <section class="panel open">
+      <div class="panel-head" style="cursor:default">
+        <span class="title">sqlite console</span>
         <span class="count">ai-lab.db</span>
         <span class="right">
-          <button class="ghost" data-action="backup" title="download the whole database as JSON">backup</button>
-          <button class="ghost" data-action="restore" title="replace the database from a JSON backup">restore</button>
-          <button class="act" data-action="run-sql">run ⌘⏎</button>
+          <button class="btn" data-action="backup" title="download every table as JSON">${icon('download')} backup</button>
+          <button class="btn" data-action="restore" title="replace the database from a JSON backup">${icon('upload')} restore</button>
+          <button class="btn primary" data-action="run-sql">run</button>
         </span>
       </div>
-      <div class="sec-body">
+      <div class="panel-body">
         <div class="row wrap" style="margin-bottom:10px">
           ${Object.keys(SAMPLES)
-            .map((k) => `<button class="mini-btn" data-action="sample" data-key="${esc(k)}">${esc(k)}</button>`)
+            .map((k) => `<button class="btn quiet" data-action="sample" data-key="${esc(k)}">${esc(k)}</button>`)
             .join('')}
         </div>
-        <textarea id="sql-in" class="mono" style="min-height:150px">${esc(SAMPLES['concept progress'])}</textarea>
-        <div class="note" style="margin-top:8px">
-          tables: <span class="mono">${TABLES.join(' · ')}</span> — <span class="mono">concepts</span> is a view over
-          <span class="mono">phases</span>, which is what the storage still calls them. Writes are allowed and land straight in the file.
-        </div>
-        <div class="note" style="margin-top:6px">
-          <b>backup</b> downloads every table as JSON; <b>restore</b> replaces the database from one.
-          Uploaded documents in <span class="mono">tracker/files/</span> are not in the JSON — copy that folder yourself.
-        </div>
-        <div id="sql-out" style="margin-top:14px"></div>
+        <textarea id="sql-in" spellcheck="false" aria-label="sql">${esc(SAMPLES['concept progress'])}</textarea>
+        <p class="note" style="margin-top:10px">
+          Tables: <span class="mono">${TABLES.join(', ')}</span>. <span class="mono">concepts</span> is a view over
+          <span class="mono">phases</span>, which is what the storage still calls them. Writes land straight in the file.
+          Backup covers every table; uploaded files in <span class="mono">tracker/files/</span> are not in the JSON.
+        </p>
+        <div id="sql-out" style="margin-top:16px"></div>
       </div>
-    </div>`;
+    </section>
+  </div>`;
 }
 
 async function runSql() {
   const sql = $('#sql-in').value.trim();
   const out = $('#sql-out');
   if (!sql) return;
-  out.innerHTML = '<div class="dim mini">running…</div>';
+  out.innerHTML = '<p class="note">running</p>';
   try {
     const rows = await all(sql);
-    if (!rows.length) return void (out.innerHTML = '<div class="dim mini">ok — 0 rows</div>');
+    if (!rows.length) return void (out.innerHTML = '<p class="note">ok, 0 rows</p>');
     const cols = Object.keys(rows[0]);
     out.innerHTML = `<div class="scroll"><table>
         <thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c] === null ? '—' : r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
+        <tbody>${rows.map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c] === null ? '' : r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
       </table></div>
-      <div class="note" style="margin-top:8px">${rows.length} row(s)</div>`;
+      <p class="note" style="margin-top:10px">${rows.length} row${rows.length > 1 ? 's' : ''}</p>`;
   } catch (e) {
-    out.innerHTML = `<div class="err">${esc(e.message || e)}</div>`;
+    out.innerHTML = `<p class="err">${esc(e.message || e)}</p>`;
   }
 }
 
@@ -788,7 +783,7 @@ async function runSql() {
 // Concept order follows the graph: a topological sort of the prerequisite edges.
 async function applyGraphOrder(phases) {
   const { order, cycle } = topoOrder(phases, phases.edges);
-  if (cycle) return 'cycle — order left alone';
+  if (cycle) return 'cycle found, order left alone';
   const current = phases.map((p) => p.id).join(',');
   if (order.join(',') === current) return '';
   for (let i = 0; i < order.length; i++) await run(`UPDATE phases SET pos = ${i} WHERE id = ${q(order[i])}`);
@@ -803,13 +798,13 @@ const GRAPH_CTX = {
     const dup = await all(`SELECT id FROM edges WHERE from_id = ${q(from)} AND to_id = ${q(to)}`);
     if (dup.length) return toast('already linked');
     const back = await all(`SELECT id FROM edges WHERE from_id = ${q(to)} AND to_id = ${q(from)}`);
-    if (back.length) return toast('that would point both ways — delete the other edge first');
+    if (back.length) return toast('that would point both ways, delete the other edge first');
     await run(`INSERT INTO edges VALUES (${q(uid())}, ${q(from)}, ${q(to)})`);
     const phases = await model();
     const { cycle } = topoOrder(phases, phases.edges);
     if (cycle) {
       await run(`DELETE FROM edges WHERE from_id = ${q(from)} AND to_id = ${q(to)}`);
-      return after('that edge would make a cycle — not added');
+      return after('that edge would make a cycle, not added');
     }
     return after(await applyGraphOrder(phases));
   },
@@ -821,7 +816,7 @@ const GRAPH_CTX = {
     state.view = 'list';
     state.open = id;
     localStorage.setItem('ai-lab-view', 'list');
-    render().then(() => document.querySelector('.phase-card.is-open')?.scrollIntoView({ block: 'center' }));
+    render().then(() => document.querySelector('.concept.open')?.scrollIntoView({ block: 'center' }));
   },
 };
 
@@ -841,7 +836,7 @@ async function render() {
 
 function showTab(tab) {
   state.tab = tab;
-  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   document.querySelectorAll('.tab').forEach((s) => (s.hidden = s.id !== 'tab-' + tab));
   render();
 }
@@ -883,7 +878,7 @@ document.addEventListener('click', async (e) => {
       const p = (await model()).find((x) => x.id === id);
       if (el.checked && isUnit(p) && !canClose(p)) {
         el.checked = false;
-        return toast("can't close — both exit lists need entries");
+        return toast("can't close, both exit lists need entries");
       }
       await run(`UPDATE phases SET status = ${el.checked ? "'closed'" : "'not started'"},
         last_touched = ${q(today())} WHERE id = ${q(id)}`);
@@ -929,7 +924,7 @@ document.addEventListener('click', async (e) => {
       state.sections.concepts = true;
       saveSections();
       await render();
-      document.querySelector('.phase-card.is-open')?.scrollIntoView({ block: 'center' });
+      document.querySelector('.concept.open')?.scrollIntoView({ block: 'center' });
       return;
     }
     case 'toggle-phase':
@@ -950,7 +945,7 @@ document.addEventListener('click', async (e) => {
     case 'break':
       await run(`UPDATE breaks SET done = ${el.checked ? 1 : 0} WHERE id = ${q(id)}`);
       await touch(el.dataset.phase);
-      return after(el.checked ? 'broken — write the trace down' : '');
+      return after(el.checked ? 'broken, write the trace down' : '');
     case 'edit-trace':
       state.edit = { kind: 'trace', id };
       return render();
@@ -1064,7 +1059,7 @@ document.addEventListener('click', async (e) => {
     /* parked */
     case 'fire-parked':
       await run(`UPDATE parked SET fired = ${el.checked ? 1 : 0}, fired_at = ${el.checked ? q(today()) : 'NULL'} WHERE id = ${q(id)}`);
-      return after(el.checked ? 'trigger fired — it graduates into a concept now' : '');
+      return after(el.checked ? 'trigger fired, it graduates into a concept now' : '');
     case 'add-parked': {
       const t = $('#pk-topic').value.trim();
       const g = $('#pk-trigger').value.trim();
@@ -1140,10 +1135,10 @@ document.addEventListener('change', async (e) => {
     const p = phases[i];
     if (el.value === 'closed' && !canClose(p)) {
       el.value = p.status;
-      return toast("can't close — both exit lists need entries");
+      return toast("can't close, both exit lists need entries");
     }
     const blocked = blockedBy(phases, i);
-    if (el.value !== 'not started' && blocked && !confirm(`Gate not paid — ${blocked} is not closed. Continue anyway?`)) {
+    if (el.value !== 'not started' && blocked && !confirm(`Gate not paid. ${blocked} is not closed. Continue anyway?`)) {
       el.value = p.status;
       return;
     }
@@ -1162,12 +1157,12 @@ document.addEventListener('dragstart', (e) => {
   state.dragId = h.dataset.drag;
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', state.dragId);
-  h.closest('.phase-card')?.classList.add('dragging');
+  h.closest('.concept')?.classList.add('dragging');
 });
 
 document.addEventListener('dragend', () => {
   state.dragId = null;
-  document.querySelectorAll('.phase-card').forEach((c) => c.classList.remove('dragging', 'drop-before', 'drop-after'));
+  document.querySelectorAll('.concept').forEach((c) => c.classList.remove('dragging', 'drop-before', 'drop-after'));
 });
 
 document.addEventListener('dragover', (e) => {
@@ -1178,12 +1173,12 @@ document.addEventListener('dragover', (e) => {
     return;
   }
   if (!state.dragId) return;
-  const card = e.target.closest?.('.phase-card[data-card]');
+  const card = e.target.closest?.('.concept[data-card]');
   if (!card || card.dataset.card === state.dragId) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   const before = e.clientY < card.getBoundingClientRect().top + card.offsetHeight / 2;
-  document.querySelectorAll('.phase-card').forEach((c) => c.classList.remove('drop-before', 'drop-after'));
+  document.querySelectorAll('.concept').forEach((c) => c.classList.remove('drop-before', 'drop-after'));
   card.classList.add(before ? 'drop-before' : 'drop-after');
 });
 
@@ -1197,7 +1192,7 @@ document.addEventListener('drop', async (e) => {
     return uploadFiles([...e.dataTransfer.files], dz.dataset.phase);
   }
   if (!state.dragId) return;
-  const card = e.target.closest?.('.phase-card[data-card]');
+  const card = e.target.closest?.('.concept[data-card]');
   if (!card) return;
   e.preventDefault();
   const targetId = card.dataset.card;
@@ -1287,7 +1282,7 @@ async function backup() {
   a.download = `ai-lab-tracker-${today()}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
-  toast('downloaded — uploaded files are not in the JSON');
+  toast('downloaded. Uploaded files are not in the JSON');
 }
 
 $('#restoreFile').onchange = async (e) => {
@@ -1308,7 +1303,7 @@ $('#restoreFile').onchange = async (e) => {
     showTab('dashboard');
     tick();
   } catch (err) {
-    $('#status').innerHTML = `<span class="err">server unreachable — is server.py running?</span>`;
+    $('#status').innerHTML = `<span class="err">server unreachable, is server.py running?</span>`;
     console.error(err);
   }
 })();

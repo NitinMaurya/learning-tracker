@@ -9,7 +9,7 @@ export const GAP_Y = 58;
 export const VIEW_W = 900;
 export const COL_X = Math.round((VIEW_W - NODE_W) / 2);
 
-/** The canvas grows with the number of concepts — the path reads downward. */
+/** The canvas grows with the number of concepts; the path reads downward. */
 export const viewH = (n) => Math.max(620, 60 + n * (NODE_H + GAP_Y));
 
 const esc = (s) =>
@@ -98,7 +98,7 @@ export function graphHtml(phases, edges) {
     .join('');
 
   return `
-    ${cycle ? '<div class="warnbox">These edges form a cycle — order left unchanged until you remove one.</div>' : ''}
+    ${cycle ? '<div class="warnbox">These edges form a cycle. Order is left unchanged until you remove one.</div>' : ''}
     <div class="graph-wrap">
       <svg id="graph" width="${VIEW_W}" height="${viewH(phases.length)}"
            viewBox="0 0 ${VIEW_W} ${viewH(phases.length)}" preserveAspectRatio="xMinYMin meet">
@@ -112,12 +112,11 @@ export function graphHtml(phases, edges) {
         <path id="linkline" d="" />
       </svg>
     </div>
-    <div class="row wrap graph-legend">
-      <span class="note">Drag a node to move it. Drag from its bottom dot down onto another concept to say
-        <em>this one comes first</em>. Click an edge to delete it. Double-click a node to open it.
-        The number is the position the graph puts it in — concepts reorder to match, and each one is
-        gated on its own prerequisites.</span>
-      <span class="right"><button class="mini-btn" data-action="auto-layout">tidy layout</button></span>
+    <div class="row wrap" style="margin-top:12px;align-items:flex-start;gap:12px">
+      <p class="note" style="flex:1">Drag a node to move it. Drag from its bottom dot onto another concept to say
+        <em>this one comes first</em>. Click an edge to delete it, double-click a node to open it. The number is the
+        position the graph puts it in: concepts reorder to match, and each one is gated on its own prerequisites.</p>
+      <button class="btn" data-action="auto-layout">tidy layout</button>
     </div>`;
 }
 

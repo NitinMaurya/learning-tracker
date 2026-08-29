@@ -119,7 +119,7 @@ def seed(con):
     """First run only: load the phases and parked registry from spec.md."""
     with open(os.path.join(HERE, "seed.json")) as f:
         data = json.load(f)
-    con.execute("INSERT INTO roadmaps VALUES ('rm-spec','ai-lab — spec.md',"
+    con.execute("INSERT INTO roadmaps VALUES ('rm-spec','ai-lab spec',"
                 "'The build units. Every one starts with a build and closes on a blank page.',0)")
     con.execute("INSERT INTO tracks VALUES ('tr-spec','rm-spec','','core build path',0)")
     for pos, p in enumerate(data["phases"]):

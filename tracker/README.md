@@ -19,6 +19,14 @@ when the table is empty, so restarting never touches your work.
 sqlite3 tracker/ai-lab.db "SELECT num, status, last_touched FROM concepts ORDER BY pos;"
 ```
 
+## Look
+
+The visual system lives in `../DESIGN.md`: a dark instrument, warm near-black neutrals,
+hairlines instead of cards, and one ochre accent that means "now" and nothing else. Sans
+carries prose, mono carries data. Icons are an authored SVG set at one weight (`icons.js`),
+not emoji. Browser surfaces are themed too: selection, caret, scrollbars, focus ring, and
+tabular numerals so counters do not jitter.
+
 ## Two tabs
 
 **dashboard** — a "current concept + what to do next" banner, then two columns:
