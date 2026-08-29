@@ -191,11 +191,9 @@ check('timer cleared after stop', !store['lt-timer']);
 await fire('keydown', input({ action: 'add-claim', kind: 'can', id: c1 }, 'the schema is a contract'));
 await fire('keydown', input({ action: 'add-claim', kind: 'cannot', id: c1 }, 'why validation retries loop'));
 check('cannot-claim also files a confusion', (await sql("SELECT count(*) c FROM confusions WHERE text='why validation retries loop'"))[0].c === 1);
-const selBad = mk({ action: 'status', id: c2 }, { value: 'closed' });
-await fire('change', selBad);
+await fire('click', mk({ action: 'done', id: c2 }, { checked: true }));
 check('close refused with empty exit lists', (await sql(`SELECT status FROM concepts WHERE id='${c2}'`))[0].status === 'not started');
-const selOk = mk({ action: 'status', id: c1 }, { value: 'closed' });
-await fire('change', selOk);
+await fire('click', mk({ action: 'done', id: c1 }, { checked: true }));
 check('close allowed once both lists filled', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'closed');
 
 // drag to reorder
@@ -225,11 +223,8 @@ check('opening a light concept shows its practical checkpoint',
   has('practical checkpoint') && has('compute the cache for a 7B model'));
 check('every concept row carries a youtube search for itself',
   /class="btn quiet yt"[^>]*youtube\.com\/results\?search_query=KV%20cache%20mechanics/.test(dash()));
-check('the row no longer carries a status dropdown',
-  !/<select[^>]*data-action="status"[\s\S]{0,80}<\/select>[\s\S]{0,40}<\/span>\s*<\/div>\s*<article/.test(dash()) &&
-  dash().indexOf('data-action="status"') > dash().indexOf('class="cbody"'));
-check('status is set inside the open concept, with what to do next',
-  /<label style="margin:0">status<\/label>[\s\S]{0,400}data-action="status"/.test(dash()));
+check('no status control anywhere', !dash().includes('data-action="status"') && !drawer().includes('data-action="status"'));
+check('no next-action instruction copy', !dash().includes('Not read. One concrete thing'));
 check('a short name borrows its track for context', await (async () => {
   await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,track_id)"
     + " VALUES ('k-short','R7','Reranking','not started','','','','','',9,'tr-2')");
@@ -255,6 +250,12 @@ const guard = mk({ action: 'done', id: c2 }, { checked: true });
 await fire('click', guard);
 check('a concept with real work still needs both exit lists to close',
   (await sql(`SELECT status FROM phases WHERE id='${c2}'`))[0].status !== 'closed');
+// hitting a wall is recorded by writing one, not by picking a status
+await fire('change', { closest: () => ({ dataset: { action: 'field', id: c2, field: 'wall' }, value: 'cannot explain the retry storm' }),
+                       target: { dataset: { action: 'field', id: c2, field: 'wall' }, value: 'cannot explain the retry storm',
+                                 closest(s) { return this; } } });
+check('writing a wall marks the concept walled',
+  (await sql(`SELECT status FROM phases WHERE id='${c2}'`))[0].status === 'walled');
 check('graph is scoped to the selected track',
   (await (async () => { await fire('click', mk({ action: 'set-view', view: 'graph' }));
     const only = has('KV cache') && !has('tool-calling'); 

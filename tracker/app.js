@@ -9,12 +9,6 @@ const esc = (s) =>
   String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const STATUSES = ['not started', 'building', 'walled', 'closed'];
-const NEXT_ACTION = {
-  'not started': ['Build', 'Not read. One concrete thing that runs.'],
-  building: ['Break it on purpose', 'If nothing broke, the build was too easy.'],
-  walled: ['Read the earned concepts', 'The wall is what entitles you to them.'],
-  closed: ['Open the next concept', 'Both exit lists have entries.'],
-};
 
 const SECTION_DEFAULTS = { progress: true, concepts: true, log: true, queue: true, parked: false };
 
@@ -227,7 +221,6 @@ async function renderDashboard() {
   } else chip.hidden = true;
 
   const nextUp = current || inTrack.find((p) => p.status !== 'closed');
-  const act = NEXT_ACTION[nextUp ? nextUp.status : 'closed'];
   const roadmap = phases.roadmaps.find((r) => r.id === track?.roadmap_id);
   const trackDone = inTrack.filter((p) => p.status === 'closed').length;
 
@@ -244,7 +237,7 @@ async function renderDashboard() {
                 <div class="who"><span class="code">${esc(nextUp.num)}</span>${esc(nextUp.name)}</div>
               </div>
               ${statusHtml(nextUp.status)}
-              <p class="todo"><b>${act[0]}.</b> ${act[1]}</p>
+              <div class="grow"></div>
               <div class="acts">
                 ${timer
                   ? `<button class="btn danger" data-action="stop-timer">${icon('stop')} stop ${clock(remainingMs())}</button>`
@@ -395,14 +388,6 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
           ${blocked && p.status !== 'not started' && p.status !== 'closed'
             ? `<div class="warnbox">${icon('warning')} Gate not paid. ${esc(blocked)} is not closed.</div>`
             : ''}
-
-          <div class="field lookup">
-            <label style="margin:0">status</label>
-            <select data-action="status" data-id="${p.id}" aria-label="status">
-              ${STATUSES.map((s) => `<option ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}
-            </select>
-            <span class="note">${esc(NEXT_ACTION[p.status][0])}. ${esc(NEXT_ACTION[p.status][1])}</span>
-          </div>
 
           ${p.practical
             ? `<div class="field"><label>practical checkpoint</label>
@@ -1212,6 +1197,16 @@ document.addEventListener('change', async (e) => {
   if (el.dataset.action === 'field') {
     await run(`UPDATE phases SET ${el.dataset.field} = ${q(el.value)} WHERE id = ${q(el.dataset.id)}`);
     await touch(el.dataset.id);
+    // writing a wall is the evidence that you hit one; nothing to set by hand
+    if (el.dataset.field === 'wall') {
+      const p = (await all(`SELECT status, wall FROM phases WHERE id = ${q(el.dataset.id)}`))[0];
+      const want = p.wall && p.wall.trim() ? 'walled' : 'building';
+      if (p.status !== 'closed' && p.status !== want && (p.status === 'walled' || want === 'walled')) {
+        await run(`UPDATE phases SET status = ${q(want)} WHERE id = ${q(el.dataset.id)}`);
+        await render();
+        return toast(want === 'walled' ? 'walled: now read the earned concepts' : 'saved');
+      }
+    }
     return toast('saved');
   }
 
@@ -1229,7 +1224,7 @@ document.addEventListener('change', async (e) => {
       return;
     }
     await run(`UPDATE phases SET status = ${q(el.value)}, last_touched = ${q(today())} WHERE id = ${q(el.dataset.id)}`);
-    return after(NEXT_ACTION[el.value] ? `${NEXT_ACTION[el.value][0]}.` : '');
+    return after('');
   }
 });
 
