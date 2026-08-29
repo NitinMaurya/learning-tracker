@@ -191,6 +191,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._delete_doc()
             if self.path == "/api/reset":
                 return self._reset()
+            if self.path == "/api/delete-roadmap":
+                return self._delete_roadmap()
         except Exception as e:  # surface SQL errors to the console tab
             return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 400)
         self.send_error(404)
@@ -245,6 +247,67 @@ class Handler(SimpleHTTPRequestHandler):
             con.commit()
         con.close()
         return self._json({"ok": True})
+
+    def _delete_roadmap(self):
+        """Remove a roadmap and everything under it, in one transaction.
+
+        Notes can be tagged across roadmaps: those lose the tag and survive if any
+        other concept still holds them. Confusions and sessions key on the concept
+        number, so they are only removed when no surviving concept shares it.
+        """
+        rid = self._body().get("id")
+        con = connect()
+        try:
+            tracks = [r["id"] for r in con.execute("SELECT id FROM tracks WHERE roadmap_id = ?", (rid,))]
+            concepts, nums = [], []
+            if tracks:
+                rows = con.execute(
+                    "SELECT id, num FROM phases WHERE track_id IN (%s)" % ",".join("?" * len(tracks)),
+                    tracks,
+                ).fetchall()
+                concepts = [r["id"] for r in rows]
+                nums = [r["num"] for r in rows]
+
+            files = 0
+            if concepts:
+                cq = ",".join("?" * len(concepts))
+                for r in con.execute("SELECT stored FROM docs WHERE phase_id IN (%s)" % cq, concepts):
+                    path = os.path.abspath(os.path.join(FILES, r["stored"]))
+                    if os.path.commonpath([path, FILES]) == FILES and os.path.exists(path):
+                        os.remove(path)
+                        files += 1
+
+                for table in ("docs", "breaks", "claims", "sources"):
+                    con.execute("DELETE FROM %s WHERE phase_id IN (%s)" % (table, cq), concepts)
+                con.execute("DELETE FROM edges WHERE from_id IN (%s) OR to_id IN (%s)" % (cq, cq),
+                            concepts + concepts)
+
+                doomed = set(concepts)
+                for n in con.execute("SELECT id, phase_ids FROM notes").fetchall():
+                    tags = [t for t in (n["phase_ids"] or "").split(",") if t]
+                    kept = [t for t in tags if t not in doomed]
+                    if len(kept) == len(tags):
+                        continue
+                    if kept:
+                        con.execute("UPDATE notes SET phase_ids = ? WHERE id = ?", (",".join(kept), n["id"]))
+                    else:
+                        con.execute("DELETE FROM notes WHERE id = ?", (n["id"],))
+
+                con.execute("DELETE FROM phases WHERE id IN (%s)" % cq, concepts)
+
+                survivors = {r[0] for r in con.execute("SELECT DISTINCT num FROM phases")}
+                orphaned = sorted(set(nums) - survivors)
+                if orphaned:
+                    nq = ",".join("?" * len(orphaned))
+                    con.execute("DELETE FROM confusions WHERE phase_num IN (%s)" % nq, orphaned)
+                    con.execute("DELETE FROM sessions WHERE phase_num IN (%s)" % nq, orphaned)
+
+            con.execute("DELETE FROM tracks WHERE roadmap_id = ?", (rid,))
+            con.execute("DELETE FROM roadmaps WHERE id = ?", (rid,))
+            con.commit()
+        finally:
+            con.close()
+        return self._json({"ok": True, "tracks": len(tracks), "concepts": len(concepts), "files": files})
 
     def _reset(self):
         """Wipe every table and reseed. Used by test-ui.mjs; destructive."""

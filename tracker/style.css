@@ -489,3 +489,8 @@ tr:last-child td { border-bottom: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.rm-head .iconbtn { margin-left: 6px; }
+.rm-confirm { padding: 12px 16px; border-left: 2px solid var(--alert); background: var(--alert-wash); }
+.rm-confirm p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--fg-2); }
+.rm-confirm b { color: var(--fg); font-weight: 550; }

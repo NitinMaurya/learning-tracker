@@ -1,4 +1,4 @@
-import { boot, all, run, save, load, exportJson, upload, deleteDoc, q, uid, today, now, TABLES } from './api.js';
+import { boot, all, run, save, load, exportJson, upload, deleteDoc, deleteRoadmap, q, uid, today, now, TABLES } from './api.js';
 import { graphHtml, mountGraph, topoOrder, autoPos } from './graph.js';
 import { icon, fileIcon } from './icons.js';
 
@@ -26,6 +26,7 @@ let state = {
   showResolved: false,
   sessionsAll: false,
   newPhase: false,
+  confirmDel: null,
   seKind: 'build',
   dragId: null,
   drawer: localStorage.getItem('ai-lab-drawer') === '1',
@@ -280,13 +281,25 @@ function treeRail(phases) {
       const all = r.tracks.flatMap((t) => t.concepts);
       const done = all.filter((p) => p.status === 'closed').length;
       return `<div class="rm">
-        <div class="rm-head" data-action="toggle-roadmap" data-id="${r.id}" role="button" tabindex="0"
+        ${state.confirmDel === r.id
+          ? `<div class="rm-confirm">
+              <p>Delete <b>${esc(r.name)}</b> with ${r.tracks.length} track${r.tracks.length === 1 ? '' : 's'},
+                ${all.length} concept${all.length === 1 ? '' : 's'} and everything attached to them?
+                Uploaded files are removed from disk. This cannot be undone.</p>
+              <div class="row">
+                <button class="btn danger" data-action="confirm-del-roadmap" data-id="${r.id}">delete</button>
+                <button class="btn" data-action="cancel-del-roadmap">cancel</button>
+              </div>
+            </div>`
+          : `<div class="rm-head" data-action="toggle-roadmap" data-id="${r.id}" role="button" tabindex="0"
              aria-expanded="${openRm}">
           ${icon('chevron')}
           <span class="name">${esc(r.name)}</span>
           <span class="count">${done}/${all.length}</span>
-        </div>
-        ${openRm ? `<ul class="tracks">
+          <button class="iconbtn danger" data-action="del-roadmap" data-id="${r.id}"
+            title="delete this roadmap" aria-label="delete roadmap">${icon('close')}</button>
+        </div>`}
+        ${openRm && state.confirmDel !== r.id ? `<ul class="tracks">
           ${r.tracks
             .map((t) => {
               const n = t.concepts.length;
@@ -305,6 +318,7 @@ function treeRail(phases) {
       </div>`;
     })
     .join('')}
+    ${phases.roadmaps.length ? '' : '<p class="empty" style="padding:12px 16px">No roadmaps. Add one below; it starts with a single track you can rename.</p>'}
     <div class="rail-add">
       <input type="text" id="rm-new" placeholder="new roadmap" data-action="add-roadmap" aria-label="add roadmap" />
     </div>`;
@@ -870,6 +884,24 @@ document.addEventListener('click', async (e) => {
       state.open = null;
       localStorage.setItem('ai-lab-track', id);
       return render();
+    case 'del-roadmap':
+      state.confirmDel = id;
+      state.collapsed[id] = true;
+      return render();
+    case 'cancel-del-roadmap':
+      state.confirmDel = null;
+      return render();
+    case 'confirm-del-roadmap': {
+      const gone = (await all(`SELECT id FROM tracks WHERE roadmap_id = ${q(id)}`)).map((t) => t.id);
+      const res = await deleteRoadmap(id);
+      state.confirmDel = null;
+      if (gone.includes(state.track)) {
+        state.track = null;
+        localStorage.removeItem('ai-lab-track');
+      }
+      return after(`deleted ${res.concepts} concept${res.concepts === 1 ? '' : 's'}` +
+        (res.files ? ` and ${res.files} file${res.files === 1 ? '' : 's'}` : ''));
+    }
     case 'toggle-roadmap':
       state.collapsed[id] = !state.collapsed[id];
       localStorage.setItem('ai-lab-collapsed', JSON.stringify(state.collapsed));
@@ -1212,6 +1244,10 @@ document.addEventListener('drop', async (e) => {
 
 document.addEventListener('keydown', async (e) => {
   if (e.key === 'Escape') {
+    if (state.confirmDel) {
+      state.confirmDel = null;
+      return render();
+    }
     if (state.edit) {
       state.edit = null;
       return render();

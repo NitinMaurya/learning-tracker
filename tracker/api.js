@@ -72,3 +72,7 @@ export async function upload(file, phaseId) {
 export async function deleteDoc(id) {
   return post('/api/delete-doc', { id });
 }
+
+export async function deleteRoadmap(id) {
+  return post('/api/delete-roadmap', { id });
+}

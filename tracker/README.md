@@ -61,7 +61,11 @@ actually **build**, open it and fill in build / verify / break-on-purpose / wall
 the spec's rules kick in (no closing without both exit lists). Most concepts stay
 a checkbox forever; that is the "earned, not scheduled" rule expressed in data.
 
-The left rail is the roadmap tree; picking a track swaps the concepts column.
+The left rail is the roadmap tree; picking a track swaps the concepts column. Deleting a
+roadmap (the x on its header) asks first, naming how many tracks and concepts go with it,
+then removes them in one transaction along with their breaks, claims, sources, documents
+(files included), edges, confusions and sessions. A note tagged to a surviving concept in
+another roadmap keeps living: it only loses the tag.
 `spec.md`'s units live in their own roadmap, separate from anything imported.
 
 The concepts section has a **list / graph** toggle. In graph view the selected

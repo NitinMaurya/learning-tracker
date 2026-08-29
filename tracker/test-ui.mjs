@@ -297,6 +297,58 @@ await fire('click', mk({ action: 'apply-order' }));
 const ord = (await sql('SELECT num FROM concepts ORDER BY pos')).map((r) => r.num);
 check(`drawing 05 → 03 reorders concepts (${ord.join(',')})`, ord.indexOf('05') < ord.indexOf('03'));
 
+// ---- deleting a roadmap cascades, and stops at the roadmap's own edge ----
+await sql("INSERT INTO roadmaps VALUES ('rm-x','Doomed','',9)");
+await sql("INSERT INTO tracks VALUES ('tr-x','rm-x','1','only track',0)");
+await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,track_id)"
+  + " VALUES ('k-x1','X1','doomed concept','not started','','','','','',0,'tr-x')");
+await sql("INSERT INTO breaks VALUES ('b-x1','k-x1','a failure',0,0,NULL)");
+await sql("INSERT INTO claims VALUES ('cl-x1','k-x1','can','a claim','2026-01-01')");
+await sql("INSERT INTO sources VALUES ('s-x1','https://x','changed my mind','2026-01-01','k-x1')");
+await sql("INSERT INTO edges VALUES ('e-x1','k-x1','k-x1')");
+await sql("INSERT INTO confusions VALUES ('cf-x1','doomed confusion','X1','2026-01-01',0,NULL)");
+await sql("INSERT INTO sessions VALUES ('se-x1','2026-01-01','X1','build',30,'doomed session')");
+// one note spans both roadmaps, one belongs only to the doomed concept
+await sql(`INSERT INTO notes VALUES ('n-shared','shared claim','','${c1},k-x1','2026-01-01','2026-01-01')`);
+await sql("INSERT INTO notes VALUES ('n-only','doomed claim','','k-x1','2026-01-01','2026-01-01')");
+
+const upload = new File([Buffer.from('doomed bytes')], 'doomed.log', { type: 'text/plain' });
+await fire('change', mk({ action: 'upload', id: 'k-x1' }, { files: [upload] }));
+await wait(400);
+const doomedDoc = (await sql("SELECT stored FROM docs WHERE phase_id='k-x1'"))[0];
+check('setup: the doomed roadmap has a file on disk',
+  !!doomedDoc && (await globalThis.fetch('/files/' + encodeURIComponent(doomedDoc.stored))).status === 200);
+
+await fire('click', mk({ action: 'del-roadmap', id: 'rm-x' }));
+check('delete asks first, naming what goes',
+  dash().includes('rm-confirm') && dash().includes('Doomed') && dash().includes('cannot be undone'));
+await fire('click', mk({ action: 'cancel-del-roadmap' }));
+check('cancel leaves the roadmap alone', (await sql("SELECT count(*) c FROM roadmaps WHERE id='rm-x'"))[0].c === 1);
+
+await fire('click', mk({ action: 'del-roadmap', id: 'rm-x' }));
+await fire('click', mk({ action: 'confirm-del-roadmap', id: 'rm-x' }));
+const gone = async (q) => (await sql(q))[0].c === 0;
+check('roadmap, its tracks and concepts are gone',
+  await gone("SELECT count(*) c FROM roadmaps WHERE id='rm-x'") &&
+  await gone("SELECT count(*) c FROM tracks WHERE roadmap_id='rm-x'") &&
+  await gone("SELECT count(*) c FROM phases WHERE track_id='tr-x'"));
+check('everything attached to those concepts goes with them',
+  await gone("SELECT count(*) c FROM breaks WHERE phase_id='k-x1'") &&
+  await gone("SELECT count(*) c FROM claims WHERE phase_id='k-x1'") &&
+  await gone("SELECT count(*) c FROM sources WHERE phase_id='k-x1'") &&
+  await gone("SELECT count(*) c FROM edges WHERE from_id='k-x1'") &&
+  await gone("SELECT count(*) c FROM docs WHERE phase_id='k-x1'") &&
+  await gone("SELECT count(*) c FROM confusions WHERE id='cf-x1'") &&
+  await gone("SELECT count(*) c FROM sessions WHERE id='se-x1'"));
+check('the uploaded file is removed from disk',
+  (await globalThis.fetch('/files/' + encodeURIComponent(doomedDoc.stored))).status === 404);
+const shared = (await sql("SELECT phase_ids FROM notes WHERE id='n-shared'"))[0];
+check('a note shared with another roadmap survives, minus the tag',
+  !!shared && shared.phase_ids === c1 && await gone("SELECT count(*) c FROM notes WHERE id='n-only'"));
+check('the other roadmap is untouched',
+  (await sql("SELECT count(*) c FROM phases WHERE track_id='tr-spec'"))[0].c === 5 &&
+  (await sql(`SELECT count(*) c FROM breaks WHERE phase_id='${c1}'`))[0].c > 0);
+
 console.log(`\ndashboard bytes: ${dash().length} | leaks: ${/undefined|NaN|\[object Object\]/.test(dash())}`);
 console.log(failures ? `\n${failures} FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);
