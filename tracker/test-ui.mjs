@@ -94,6 +94,18 @@ await fire('click', mk({ action: 'break', id: b1, phase: c1 }, { checked: true }
 await fire('click', mk({ action: 'edit-trace', id: b1 }));
 stub('#edit-box').value = 'ValidationError: city';
 await fire('click', mk({ action: 'save-trace', id: b1, phase: c1 }));
+// imported roadmap topics render as their own checklist and tick independently
+await sql(`INSERT INTO topics VALUES ('t-x1','${c1}','F1','problem framing',1.5,'classify 10 requirements',0,0)`);
+await fire('click', mk({ action: 'toggle-phase', id: c1 }));
+await fire('click', mk({ action: 'toggle-phase', id: c1 }));
+check('topics checklist renders with code, hours and checkpoint',
+  has('topic-list') && has('problem framing') && has('1.5h') && has('classify 10 requirements'));
+await fire('click', mk({ action: 'topic', id: 't-x1', phase: c1 }, { checked: true }));
+check('ticking a topic persists', (await sql("SELECT done FROM topics WHERE id='t-x1'"))[0].done === 1);
+check('topics are separate from break-on-purpose',
+  dash().indexOf('topic-list') < dash().indexOf('break on purpose'));
+await sql("DELETE FROM topics WHERE id='t-x1'");
+
 check('break + trace persist', (await sql(`SELECT done, trace FROM breaks WHERE id='${b1}'`))[0].trace === 'ValidationError: city');
 
 // confusions now live inside the concept
@@ -122,7 +134,7 @@ const sqlTab = captured['#tab-sql'] || '';
 check('backup/restore moved into the sql tab',
   sqlTab.includes('data-action="backup"') && sqlTab.includes('data-action="restore"'));
 const exported = await (await globalThis.fetch('/api/export')).json();
-check('backup export returns every table', Object.keys(exported).length === 10 && exported.phases.length === 5);
+check('backup export returns every table', Object.keys(exported).length === 11 && exported.phases.length === 5);
 await fire('click', { closest: (sel) => (sel === '#tabs button' ? { dataset: { tab: 'dashboard' } } : null) });
 
 // notes, tagged across concepts

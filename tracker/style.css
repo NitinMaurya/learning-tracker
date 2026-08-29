@@ -539,6 +539,20 @@ del { color: var(--dim); }
 .graph-legend { margin-top: 10px; align-items: flex-start; gap: 12px; }
 .graph-legend .note { flex: 1; min-width: 260px; }
 
+.topic-list > li { align-items: flex-start; }
+.topic-list .main { font-size: 12.5px; }
+.tcode {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-right: 4px;
+}
+.topic-list > li.checked .tcode { opacity: .5; }
+.topic-list .sub { font-family: var(--sans); }
+
 /* ---------- notes / chips ---------- */
 
 .chip {

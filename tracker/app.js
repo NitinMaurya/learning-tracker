@@ -133,7 +133,7 @@ const barHtml = (done, total) => {
 /* ---------- data ---------- */
 
 async function model() {
-  const [phases, breaks, claims, sources, notes, docs, confusions, edges] = await Promise.all([
+  const [phases, breaks, claims, sources, notes, docs, confusions, edges, topics] = await Promise.all([
     all('SELECT * FROM phases ORDER BY pos'),
     all('SELECT * FROM breaks ORDER BY pos'),
     all('SELECT * FROM claims ORDER BY created_at'),
@@ -142,6 +142,7 @@ async function model() {
     all('SELECT * FROM docs ORDER BY created_at DESC'),
     all('SELECT * FROM confusions ORDER BY created_at DESC'),
     all('SELECT * FROM edges'),
+    all('SELECT * FROM topics ORDER BY pos'),
   ]);
   for (const p of phases) {
     p.breaks = breaks.filter((b) => b.phase_id === p.id);
@@ -152,6 +153,7 @@ async function model() {
     p.docs = docs.filter((d) => d.phase_id === p.id);
     p.confusions = confusions.filter((c) => c.phase_num === p.num);
     p.prereqs = edges.filter((e) => e.to_id === p.id).map((e) => e.from_id);
+    p.topics = topics.filter((t) => t.phase_id === p.id);
   }
   phases.confusions = confusions;
   phases.edges = edges;
@@ -285,7 +287,7 @@ function phasesHtml(phases) {
         ${running ? `<span class="pill running">⏱ <span id="timer-count">${clock(remainingMs())}</span></span>` : ''}
         <span class="right">
           <span class="dim mini counts">
-            ${done}/${p.breaks.length} broken · ${p.can.length}✓ ${p.cannot.length}✗${openConf ? ` · <span class="warnc">${openConf}?</span>` : ''}${p.notes.length ? ` · ${p.notes.length} notes` : ''}${p.docs.length ? ` · ${p.docs.length} files` : ''}
+            ${p.topics.length ? `${p.topics.filter((t) => t.done).length}/${p.topics.length} topics · ` : ''}${done}/${p.breaks.length} broken · ${p.can.length}✓ ${p.cannot.length}✗${openConf ? ` · <span class="warnc">${openConf}?</span>` : ''}${p.notes.length ? ` · ${p.notes.length} notes` : ''}${p.docs.length ? ` · ${p.docs.length} files` : ''}
           </span>
           ${running
             ? `<button class="mini-btn stop" data-action="stop-timer">■ stop</button>`
@@ -317,6 +319,8 @@ function phasesHtml(phases) {
               </div>`
             )
             .join('')}
+
+          ${topicsBlock(p)}
 
           <div class="field">
             <label>break on purpose</label>
@@ -407,6 +411,37 @@ const claimItem = (c) => `<li>
   <span class="txt"><span class="main">${esc(c.text)}</span></span>
   <button class="x danger" data-action="del-claim" data-id="${c.id}">✕</button>
 </li>`;
+
+/* ---------- topics (imported curriculum) ---------- */
+
+function topicsBlock(p) {
+  if (!p.topics.length) return '';
+  const done = p.topics.filter((t) => t.done);
+  const hours = p.topics.reduce((n, t) => n + (t.hours || 0), 0);
+  const left = p.topics.filter((t) => !t.done).reduce((n, t) => n + (t.hours || 0), 0);
+  return `<div class="field">
+    <label>topics
+      <span class="dim" style="text-transform:none;letter-spacing:0;float:right">
+        ${done.length}/${p.topics.length} · ${Math.round(left * 10) / 10}h left of ${Math.round(hours * 10) / 10}h
+      </span>
+    </label>
+    <div class="bar" style="margin-bottom:9px"><i style="width:${Math.round((done.length / p.topics.length) * 100)}%"></i></div>
+    <ul class="list topic-list">
+      ${p.topics
+        .map(
+          (t) => `<li class="${t.done ? 'checked' : ''}">
+            <input type="checkbox" data-action="topic" data-id="${t.id}" data-phase="${p.id}" ${t.done ? 'checked' : ''} />
+            <span class="txt">
+              <span class="main"><span class="tcode">${esc(t.code)}</span> ${esc(t.title)} <span class="dim">${t.hours}h</span></span>
+              ${t.practical ? `<span class="sub">🧪 ${esc(t.practical)}</span>` : ''}
+            </span>
+          </li>`
+        )
+        .join('')}
+    </ul>
+    <div class="note" style="margin-top:6px">Tick a topic only when you can explain it and have done the checkpoint — not because you read it.</div>
+  </div>`;
+}
 
 /* ---------- confusions (per concept) ---------- */
 
@@ -868,6 +903,11 @@ document.addEventListener('click', async (e) => {
     case 'stop-timer':
       e.preventDefault();
       return stopTimer(false);
+
+    case 'topic':
+      await run(`UPDATE topics SET done = ${el.checked ? 1 : 0} WHERE id = ${q(id)}`);
+      await touch(el.dataset.phase);
+      return after('');
 
     /* breaks */
     case 'break':

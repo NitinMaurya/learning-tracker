@@ -22,7 +22,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 TABLES = ["phases", "breaks", "claims", "confusions", "parked", "sources", "sessions",
-          "notes", "docs", "edges"]
+          "notes", "docs", "edges", "topics"]
 
 FILES = os.path.join(HERE, "files")   # uploaded documents live here
 MAX_UPLOAD = 50 * 1024 * 1024
@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE TABLE IF NOT EXISTS docs (
   id TEXT PRIMARY KEY, phase_id TEXT, filename TEXT, stored TEXT,
   size INTEGER, mime TEXT, created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS topics (
+  id TEXT PRIMARY KEY, phase_id TEXT, code TEXT, title TEXT, hours REAL,
+  practical TEXT, done INTEGER DEFAULT 0, pos INTEGER
 );
 CREATE TABLE IF NOT EXISTS edges (
   id TEXT PRIMARY KEY, from_id TEXT, to_id TEXT
