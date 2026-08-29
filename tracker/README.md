@@ -70,6 +70,21 @@ in parts and merged, and the model's output is validated before it reaches the
 database: types checked, strings capped, codes deduplicated, 600 concepts max.
 Nothing the model returns is trusted as SQL.
 
+## Exporting a roadmap
+
+The download arrow on a roadmap's header in the rail saves it as Markdown. The
+document is the mirror of the import: a `#` title, a `##` heading per track, and
+one checklist line per concept carrying its code, name, hours and practical
+checkpoint, so feeding the file back through the importer rebuilds the same
+roadmap. Your own work rides along as indented sub-bullets under each concept -
+notes, confusions (open and resolved, with where the answer went), sources with
+what they changed, and the filenames of attached documents. A concept with
+nothing extra stays a single line.
+
+```bash
+curl -OJ 'http://127.0.0.1:8777/api/export-roadmap?id=rm-spec'
+```
+
 ## Roadmaps, tracks, concepts
 
 ```
@@ -172,7 +187,7 @@ node tracker/test-ui.mjs
 
 | file | what it is |
 |---|---|
-| `server.py` | static server + `/api/sql`, `/api/export`, `/api/restore`, `/api/upload` |
+| `server.py` | static server + `/api/sql`, `/api/export`, `/api/export-roadmap`, `/api/restore`, `/api/upload` |
 | `api.js` | client for that API |
 | `app.js` | dashboard + sql views, timer, drag-reorder, all actions |
 | `seed.json` | concepts and parked registry from `spec.md` |

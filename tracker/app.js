@@ -28,6 +28,7 @@ let state = {
   sessionsAll: false,
   newPhase: false,
   confirmDel: null,
+  confirmReset: null,   // track id awaiting a confirmed progress reset
   imp: null,            // { state: 'parsing'|'preview'|'error', proposal, error, file }
   reveal: {},          // `${conceptId}:${block}` the user asked to see
   seKind: 'build',
@@ -241,7 +242,14 @@ async function renderDashboard() {
               <button data-action="set-view" data-view="list" aria-pressed="${state.view === 'list'}">${icon('list')} list</button>
               <button data-action="set-view" data-view="graph" aria-pressed="${state.view === 'graph'}">${icon('graph')} graph</button>
             </span>
-            <button class="btn quiet" data-action="new-phase-form">${icon('plus')} concept</button>` })}
+            <button class="btn quiet" data-action="new-phase-form">${icon('plus')} concept</button>
+            ${trackDone
+              ? (state.confirmReset === track.id
+                  ? `<button class="btn danger" data-action="confirm-reset" data-id="${track.id}">reset ${trackDone}?</button>
+                     <button class="btn quiet" data-action="cancel-reset">keep</button>`
+                  : `<button class="btn quiet" data-action="reset-track" data-id="${track.id}"
+                       title="untick every done concept in this track">reset</button>`)
+              : ''}` })}
       </div>
     </div>`;
 
@@ -327,6 +335,9 @@ function treeRail(phases) {
           ${icon('chevron')}
           <span class="name">${esc(r.name)}</span>
           <span class="count">${done}/${all.length}</span>
+          <a class="iconbtn" href="/api/export-roadmap?id=${encodeURIComponent(r.id)}" download
+            data-action="export-roadmap" title="download this roadmap as markdown"
+            aria-label="export roadmap as markdown">${icon('download')}</a>
           <button class="iconbtn danger" data-action="del-roadmap" data-id="${r.id}"
             title="delete this roadmap" aria-label="delete roadmap">${icon('close')}</button>
         </div>`}
@@ -394,9 +405,9 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
             : ''}
           ${p.status !== 'not started' && !running ? statusHtml(p.status) : ''}
           ${running
-            ? `<button class="btn danger" data-action="stop-timer">stop <span class="timer-count">${clock(remainingMs())}</span></button>`
+            ? `<button class="btn danger" data-action="stop-timer">${icon('stop')} stop <span class="timer-count">${clock(remainingMs())}</span></button>`
             : `<button class="btn quiet" data-action="start-timer" data-id="${p.id}"
-                 title="start a one hour session on this concept">start</button>`}
+                 title="start a one hour session on this concept">${icon('play')} start</button>`}
           <a class="btn quiet yt" href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery(p, track))}"
              target="_blank" rel="noreferrer" data-action="lookup"
              title="youtube: ${esc(searchQuery(p, track))}">${icon('video')} youtube</a>
@@ -873,6 +884,7 @@ document.addEventListener('click', async (e) => {
   const id = el.dataset.id;
 
   if (a === 'lookup') return;   // a real link; let the browser have it
+  if (a === 'export-roadmap') return;   // ditto: the browser does the download
 
   switch (a) {
     case 'toggle-drawer':
@@ -886,6 +898,19 @@ document.addEventListener('click', async (e) => {
       state.open = null;
       localStorage.setItem('lt-track', id);
       return render();
+    case 'reset-track':
+      state.confirmReset = id;
+      return render();
+    case 'cancel-reset':
+      state.confirmReset = null;
+      return render();
+    case 'confirm-reset': {
+      // progress only: notes, links, files, confusions and sessions are left alone
+      const res = await run(`UPDATE phases SET status = 'not started'
+        WHERE track_id = ${q(id)} AND status = 'closed'`);
+      state.confirmReset = null;
+      return after(`reset ${res.changes > 0 ? res.changes : ''} concepts to not started`.replace('  ', ' '));
+    }
     case 'import-cancel':
       state.imp = null;
       return render();

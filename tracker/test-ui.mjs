@@ -369,6 +369,68 @@ check('importing writes the roadmap, its tracks and its concepts', !!imported &&
   (await sql("SELECT count(*) c FROM phases WHERE num='C1'"))[0].c === 1);
 const c1row = (await sql("SELECT hours, practical FROM phases WHERE num='C1'"))[0];
 check('hours and the checkpoint text come across', c1row.hours === 2 && !!c1row.practical);
+// ---- exporting a roadmap back to markdown (the mirror of the import) ----
+// a tiny reader for the exported shape: if this can find the structure, so can the importer
+const reparse = (text) => {
+  const out = { name: '', tracks: [] };
+  for (const line of text.split('\n')) {
+    let m;
+    if ((m = line.match(/^# (.+)$/))) out.name = m[1];
+    else if ((m = line.match(/^## (?:[\w.]+\. )?(.+)$/))) out.tracks.push({ title: m[1], concepts: [] });
+    else if ((m = line.match(/^- \[[ x]\] `([^`]*)` (.+)$/))) {
+      let rest = m[2], hours = null, practical = null;
+      const hm = rest.match(/ \(([\d.]+)h\)/);
+      if (hm) { hours = Number(hm[1]); rest = rest.replace(hm[0], ''); }
+      const d = rest.indexOf(' - ');
+      if (d >= 0) { practical = rest.slice(d + 3).trim(); rest = rest.slice(0, d); }
+      out.tracks[out.tracks.length - 1].concepts.push({ code: m[1], name: rest.trim(), hours, practical });
+    }
+  }
+  return out;
+};
+
+await sql(`UPDATE phases SET status='closed' WHERE num='C1'`);
+const exportRes = await globalThis.fetch(`/api/export-roadmap?id=${imported.id}`);
+const exportedMd = await exportRes.text();
+check('a roadmap downloads as markdown under its own name',
+  exportRes.status === 200 &&
+  (exportRes.headers.get('content-type') || '').startsWith('text/markdown') &&
+  (exportRes.headers.get('content-disposition') || '') === 'attachment; filename="Distributed-Systems.md"');
+check('the export carries the codes, names, hours and checkpoints',
+  exportedMd.startsWith('# Distributed Systems') &&
+  exportedMd.includes('## 1. Consensus') && exportedMd.includes('## 2. Storage') &&
+  exportedMd.includes('`C1` Raft leader election (2h) - implement a leader election over 3 nodes') &&
+  exportedMd.includes('`S1` LSM trees (1.5h) - write a memtable and flush it'));
+check('the export reads as a checklist: done is ticked, the rest are open boxes',
+  exportedMd.includes('- [x] `C1`') && exportedMd.includes('- [ ] `C2`'));
+check('a concept with nothing extra is a single line',
+  exportedMd.split('\n').filter((l) => l.startsWith('- [ ] `C2`')).length === 1 &&
+  !/`C2` Log replication \(3h\)\n\s+-/.test(exportedMd));
+await sql(`UPDATE phases SET status='not started' WHERE num='C1'`);
+
+const back = await (await globalThis.fetch('/api/import-commit', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ proposal: reparse(exportedMd) }) })).json();
+const rtBefore = await sql(`SELECT p.num, p.name, p.hours, p.practical FROM phases p
+  JOIN tracks t ON t.id = p.track_id WHERE t.roadmap_id = '${imported.id}' ORDER BY t.pos, p.pos`);
+const rtAfter = await sql(`SELECT p.num, p.name, p.hours, p.practical FROM phases p
+  JOIN tracks t ON t.id = p.track_id WHERE t.roadmap_id = '${back.id}' ORDER BY t.pos, p.pos`);
+check('the markdown feeds back through the importer as the same roadmap',
+  back.ok && back.tracks === 2 && back.concepts === 3 &&
+  JSON.stringify(rtAfter) === JSON.stringify(rtBefore));
+await globalThis.fetch('/api/delete-roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: back.id }) });
+
+const specMd = await (await globalThis.fetch('/api/export-roadmap?id=rm-spec')).text();
+check('a resolved confusion keeps its answer in the export',
+  specMd.includes('  - confusion (resolved): why does the retry loop not converge -> notes/tool-schemas.md'));
+
+const missing = await globalThis.fetch('/api/export-roadmap?id=no-such-roadmap');
+check('an unknown roadmap id is an error, not an empty file',
+  missing.status === 404 && !!(await missing.json()).error);
+check('the rail offers the download next to delete',
+  /<a class="iconbtn" href="\/api\/export-roadmap\?id=[^"]+" download/.test(dash()));
+
 await globalThis.fetch('/api/delete-roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ id: imported.id }) });
 
@@ -393,6 +455,14 @@ await wait(400);
 const doomedDoc = (await sql("SELECT stored FROM docs WHERE phase_id='k-x1'"))[0];
 check('setup: the doomed roadmap has a file on disk',
   !!doomedDoc && (await globalThis.fetch('/files/' + encodeURIComponent(doomedDoc.stored))).status === 200);
+
+const withWork = await (await globalThis.fetch('/api/export-roadmap?id=rm-x')).text();
+check('the work attached to a concept is exported with it',
+  withWork.includes('- [ ] `X1` doomed concept') &&
+  withWork.includes('  - note: doomed claim') && withWork.includes('  - note: shared claim') &&
+  withWork.includes('  - confusion: doomed confusion') &&
+  withWork.includes('  - source: https://x - changed my mind') &&
+  withWork.includes('  - document: doomed.log'));
 
 await fire('click', mk({ action: 'del-roadmap', id: 'rm-x' }));
 check('the roadmap delete control can actually appear', await (async () => {
@@ -441,6 +511,24 @@ check('a note shared with another roadmap survives, minus the tag',
 check('the other roadmap is untouched',
   (await sql("SELECT count(*) c FROM phases WHERE track_id='tr-spec'"))[0].c === 5 &&
   (await sql(`SELECT count(*) c FROM breaks WHERE phase_id='${c1}'`))[0].c > 0);
+
+// ---- resetting a track's progress ----
+const trk = (await sql("SELECT track_id FROM phases WHERE num='C1'"))[0]?.track_id
+  || (await sql("SELECT id FROM tracks LIMIT 1"))[0].id;
+await fire('click', mk({ action: 'select-track', id: trk }));
+const someone = (await sql(`SELECT id FROM phases WHERE track_id='${trk}' LIMIT 1`))[0].id;
+await fire('click', mk({ action: 'done', id: someone }, { checked: true }));
+await sql(`INSERT OR REPLACE INTO notes VALUES ('n-keep','kept through a reset','','${someone}','2026-01-01','2026-01-01')`);
+check('reset only offers itself once something is done', has('data-action="reset-track"'));
+await fire('click', mk({ action: 'reset-track', id: trk }));
+check('reset asks first, with the count', /data-action="confirm-reset"[\s\S]{0,60}reset 1\?/.test(dash()));
+await fire('click', mk({ action: 'cancel-reset' }));
+check('keeping leaves progress alone', (await sql(`SELECT status FROM phases WHERE id='${someone}'`))[0].status === 'closed');
+await fire('click', mk({ action: 'reset-track', id: trk }));
+await fire('click', mk({ action: 'confirm-reset', id: trk }));
+check('reset unticks the track', (await sql(`SELECT count(*) c FROM phases WHERE track_id='${trk}' AND status='closed'`))[0].c === 0);
+check('reset keeps the work attached to those concepts',
+  (await sql("SELECT count(*) c FROM notes WHERE id='n-keep'"))[0].c === 1);
 
 console.log(`\ndashboard bytes: ${dash().length} | leaks: ${/undefined|NaN|\[object Object\]/.test(dash())}`);
 console.log(failures ? `\n${failures} FAILED` : '\nall checks passed');

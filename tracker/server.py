@@ -17,6 +17,7 @@ import uuid
 import sqlite3
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -172,6 +173,75 @@ def clean_proposal(p):
         raise ValueError("no concepts found in that file")
     return {"name": name, "tracks": tracks, "concepts": total,
             "hours": round(sum(c["hours"] or 0 for t in tracks for c in t["concepts"]), 1)}
+def _hours(v):
+    """2.0 reads as 2, 1.5 stays 1.5."""
+    f = float(v)
+    return str(int(f)) if f == int(f) else ("%g" % f)
+
+
+def _indent(text, pad):
+    return "\n".join(pad + line if line.strip() else "" for line in str(text).splitlines())
+
+
+def export_filename(name):
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", (name or "roadmap")).strip("-")[:60]
+    safe = re.sub(r"\.(md|markdown)$", "", safe, flags=re.I)
+    return (safe or "roadmap") + ".md"
+
+
+def roadmap_markdown(con, roadmap):
+    """The mirror of the importer: one document that reads back as this roadmap.
+
+    Structure is exactly what IMPORT_SYSTEM expects to find - a title, a heading
+    per track, a bullet per concept carrying code, name, hours and checkpoint.
+    Everything the user wrote themselves (notes, confusions, sources, documents)
+    rides along as indented sub-bullets so an export loses nothing. A concept
+    with nothing extra stays one line.
+    """
+    out = ["# %s" % (roadmap["name"] or "roadmap"), ""]
+    tracks = con.execute(
+        "SELECT * FROM tracks WHERE roadmap_id = ? ORDER BY pos", (roadmap["id"],)).fetchall()
+    notes = con.execute("SELECT * FROM notes ORDER BY created_at").fetchall()
+
+    for t in tracks:
+        head = ("%s. %s" % (t["num"], t["title"])) if (t["num"] or "").strip() else (t["title"] or "untitled")
+        out.append("## %s" % head)
+        out.append("")
+        concepts = con.execute(
+            "SELECT * FROM phases WHERE track_id = ? ORDER BY pos", (t["id"],)).fetchall()
+        for c in concepts:
+            box = "[x]" if c["status"] == "closed" else "[ ]"
+            line = "- %s `%s` %s" % (box, c["num"] or "", c["name"] or "")
+            if c["hours"]:
+                line += " (%sh)" % _hours(c["hours"])
+            if (c["practical"] or "").strip():
+                line += " - %s" % c["practical"].strip()
+            out.append(line)
+
+            for n in notes:
+                if c["id"] not in [x for x in (n["phase_ids"] or "").split(",") if x]:
+                    continue
+                out.append("  - note: %s" % (n["title"] or "untitled"))
+                if (n["body"] or "").strip():
+                    out.append(_indent(n["body"].strip(), "    "))
+            for cf in con.execute(
+                    "SELECT * FROM confusions WHERE phase_num = ? ORDER BY created_at", (c["num"],)):
+                if cf["resolved"]:
+                    out.append("  - confusion (resolved): %s -> %s"
+                               % (cf["text"], cf["resolution"] or "resolved"))
+                else:
+                    out.append("  - confusion: %s" % cf["text"])
+            for s in con.execute(
+                    "SELECT * FROM sources WHERE phase_id = ? ORDER BY created_at", (c["id"],)):
+                out.append("  - source: %s%s" % (s["url"], (" - %s" % s["changed"]) if s["changed"] else ""))
+            for d in con.execute(
+                    "SELECT * FROM docs WHERE phase_id = ? ORDER BY created_at", (c["id"],)):
+                out.append("  - document: %s" % d["filename"])
+        out.append("")
+
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
 MAX_UPLOAD = 50 * 1024 * 1024
 
 SCHEMA = """
@@ -313,6 +383,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self._payload
 
     def do_GET(self):
+        if self.path.split("?")[0] == "/api/export-roadmap":
+            return self._export_roadmap()
         if self.path == "/api/export":
             con = connect()
             out = {t: [dict(r) for r in con.execute("SELECT * FROM %s" % t)] for t in TABLES}
@@ -463,6 +535,28 @@ class Handler(SimpleHTTPRequestHandler):
             con.close()
         return self._json({"ok": True, "tracks": len(tracks), "concepts": len(concepts),
                            "files": files, "snapshot": os.path.basename(snapshot)})
+
+    def _export_roadmap(self):
+        """GET /api/export-roadmap?id=<roadmap_id> -> the roadmap as a .md download."""
+        rid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("id") or [""])[0]
+        con = connect()
+        try:
+            row = con.execute("SELECT * FROM roadmaps WHERE id = ?", (rid,)).fetchone()
+            if not row:
+                return self._json({"error": "no roadmap with id %r" % rid}, 404)
+            md = roadmap_markdown(con, row)
+        finally:
+            con.close()
+
+        body = md.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/markdown; charset=utf-8")
+        self.send_header("Content-Disposition",
+                         'attachment; filename="%s"' % export_filename(row["name"]))
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _import_parse(self):
         body = self._body()

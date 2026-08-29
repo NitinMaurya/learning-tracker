@@ -504,6 +504,8 @@ tr:last-child td { border-bottom: none; }
 }
 
 .rm-head .iconbtn { margin-left: 6px; }
+/* the export control is a real link so the browser does the download */
+.rm-head a.iconbtn { text-decoration: none; display: inline-flex; }
 .rm-confirm { padding: 12px 16px; border-left: 2px solid var(--alert); background: var(--alert-wash); }
 .rm-confirm p { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--fg-2); }
 .rm-confirm b { color: var(--fg); font-weight: 550; }
