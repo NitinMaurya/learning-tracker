@@ -186,9 +186,9 @@ function blockedBy(phases, i) {
     const open = p.prereqs
       .map((id) => phases.find((x) => x.id === id))
       .filter((x) => x && x.status !== 'closed');
-    return open.length ? open.map((x) => `concept ${x.num}`).join(', ') : null;
+    return open.length ? open.map((x) => x.num).join(', ') : null;
   }
-  return i === 0 || phases[i - 1].status === 'closed' ? null : `concept ${phases[i - 1].num}`;
+  return i === 0 || phases[i - 1].status === 'closed' ? null : phases[i - 1].num;
 }
 
 const canClose = (p) => p.can.length > 0 && p.cannot.length > 0;
@@ -355,7 +355,7 @@ function conceptsHtml(phases, allPhases = phases) {
         ${p.hours ? `<span class="hours">${p.hours}h</span>` : ''}
         <span class="right">
           ${running ? `<span class="status building"><span class="glyph"></span><span id="timer-count">${clock(remainingMs())}</span></span>` : ''}
-          ${blocked && p.status !== 'closed' ? `<span class="status gated" title="prerequisite not closed">${icon('wall', { size: 13 })} gated by ${esc(blocked)}</span>` : ''}
+          ${blocked && p.status !== 'closed' ? `<span class="status gated" title="gated: ${esc(blocked)} is not closed" aria-label="gated: ${esc(blocked)} is not closed">${icon('wall', { size: 13 })}</span>` : ''}
           ${unit ? `<span class="counts">${done}/${p.breaks.length} broken · ${p.can.length}/${p.cannot.length} exit${openConf ? ` · <span class="warn">${openConf} open</span>` : ''}</span>` : ''}
           ${unit || p.status !== 'not started' ? statusHtml(p.status) : ''}
           <select data-action="status" data-id="${p.id}" aria-label="status">

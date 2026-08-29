@@ -286,11 +286,11 @@ const c3 = (await sql("SELECT id FROM concepts WHERE num='03'"))[0].id;
 const c5 = (await sql("SELECT id FROM concepts WHERE num='05'"))[0].id;
 await sql(`INSERT INTO edges VALUES ('e-test', '${c5}', '${c3}')`);
 await fire('click', mk({ action: 'set-view', view: 'list' }));
-check('gating follows the graph, not list position', has('gated by concept 05'));
+check('gating follows the graph, not list position', has('gated: 05 is not closed'));
 
 await sql("DELETE FROM edges WHERE id = 'e-test'");
 await fire('click', mk({ action: 'set-view', view: 'list' }));
-check('deleting the edge releases the gate', !has('gated by concept 05'));
+check('deleting the edge releases the gate', !has('gated: 05 is not closed'));
 
 await sql(`INSERT INTO edges VALUES ('e-test2', '${c5}', '${c3}')`);
 await fire('click', mk({ action: 'apply-order' }));
