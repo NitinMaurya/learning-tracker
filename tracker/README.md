@@ -105,8 +105,9 @@ the timer recorded it.
 
 ## Notes and documents
 
-A note is a claim, not a summary: the title states it, the body defends it. The
-editor is a title and a body, nothing else; a new note is filed against the
+A note is a claim, not a summary: the title states it, the body defends it. Pressing `+ note`
+opens the editor with the cursor in the title, so you can start typing straight
+away. The editor is a title and a body, nothing else; a new note is filed against the
 concept you wrote it in. Notes can still belong to several concepts in the data
 (they show a tag for each of the others, and editing preserves them), but the
 picker is gone from the editor.

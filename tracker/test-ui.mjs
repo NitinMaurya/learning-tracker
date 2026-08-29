@@ -103,7 +103,7 @@ check('spec.md prose is still shown, read only',
   has('from spec.md') && has('One script. One model call.') && !has('data-action="field"'));
 for (const key of ['confusions', 'notes', 'sources', 'documents'])
   await fire('click', mk({ action: 'reveal', id: c1, key }));
-check('asking for a block shows it', has('confusions') && has('A note is a claim') && has('one line: what it changed'));
+check('asking for a block shows it', has('confusions') && has('note-title') && has('one line: what it changed'));
 check('the sources block is named for links too', has('sources and links'));
 
 // confusions now live inside the concept
@@ -230,6 +230,11 @@ await fire('click', mk({ action: 'unreveal', id: 'k-I3', key: 'build' }));
 check('a mistaken click can be put away again', !/KV cache[\s\S]*?break on purpose/.test(dash()));
 await fire('click', mk({ action: 'reveal', id: 'k-I3', key: 'notes' }));
 check('an opened empty block offers to close itself', /data-action="unreveal"[^>]*data-key="notes"/.test(dash()));
+check('opening notes lands you in the editor, not on another button',
+  has('note-title') && has('note-body') && has('data-action="save-note"'));
+await fire('click', mk({ action: 'cancel-edit' }));
+await fire('click', mk({ action: 'reveal', id: 'k-I3', key: 'confusions' }));
+check('the other blocks still open onto their own input', has('conf-k-I3'));
 await fire('click', mk({ action: 'done', id: 'k-I3' }, { checked: true }));
 check('ticking a light concept closes it without the exit-list rule',
   (await sql("SELECT status FROM phases WHERE id='k-I3'"))[0].status === 'closed');

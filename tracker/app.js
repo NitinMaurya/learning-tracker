@@ -908,9 +908,19 @@ document.addEventListener('click', async (e) => {
       document.querySelector('.concept.open')?.scrollIntoView({ block: 'center' });
       return;
     }
-    case 'reveal':
-      state.reveal[`${id}:${el.dataset.key}`] = true;
+    case 'reveal': {
+      const key = el.dataset.key;
+      state.reveal[`${id}:${key}`] = true;
+      // every other block opens onto its own input; notes hid behind a second click
+      if (key === 'notes') {
+        const p = (await model()).find((x) => x.id === id);
+        if (!p?.notes.length) {
+          state.edit = { kind: 'note', id: 'new', phase: id };
+          state.noteTags = [id];
+        }
+      }
       return render();
+    }
     case 'unreveal':
       delete state.reveal[`${id}:${el.dataset.key}`];
       return render();
