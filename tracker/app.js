@@ -336,8 +336,10 @@ function treeRail(phases) {
               const n = t.concepts.length;
               const d = t.concepts.filter((p) => p.status === 'closed').length;
               const live = t.concepts.some((p) => p.status === 'building' || p.status === 'walled');
+              const pct = n ? Math.round((d / n) * 100) : 0;
               return `<li data-action="select-track" data-id="${t.id}" role="button" tabindex="0"
-                  aria-current="${state.track === t.id}" class="${d === n && n ? 'complete' : ''}">
+                  aria-current="${state.track === t.id}" class="${d === n && n ? 'complete' : ''}"
+                  style="--fill:${pct}%" title="${d} of ${n} done">
                 ${t.num ? `<span class="n">${esc(t.num)}</span>` : ''}
                 <span class="label" title="${esc(t.title)}">${esc(t.title)}</span>
                 ${live ? `<span class="live" title="work in progress">${icon('dot', { size: 10 })}</span>` : ''}
@@ -374,6 +376,7 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
       const open = state.open === p.id;
       const openConf = p.confusions.filter((c) => !c.resolved).length;
       const running = timer && timer.id === p.id;
+      const isCurrent = running || p.status === 'building' || p.status === 'walled';
 
       const row = `<div class="crow" data-action="toggle-phase" data-id="${p.id}" role="button" tabindex="0"
           aria-expanded="${open}" draggable="true" data-drag="${p.id}">
@@ -384,7 +387,6 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
         <span class="name"><span class="code">${esc(p.num)}</span>${esc(p.name)}</span>
         ${p.hours ? `<span class="hours">${p.hours}h</span>` : ''}
         <span class="right">
-          ${blocked && p.status !== 'closed' ? `<span class="status gated" title="gated: ${esc(blocked)} is not closed" aria-label="gated: ${esc(blocked)} is not closed">${icon('wall', { size: 13 })}</span>` : ''}
           ${openConf || p.notes.length || p.docs.length
             ? `<span class="counts">${[openConf ? `<span class="warn">${openConf} open</span>` : '',
                 p.notes.length ? `${p.notes.length} notes` : '',
@@ -392,16 +394,16 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
             : ''}
           ${p.status !== 'not started' && !running ? statusHtml(p.status) : ''}
           ${running
-            ? `<button class="btn danger" data-action="stop-timer">${icon('stop')} stop <span class="timer-count">${clock(remainingMs())}</span></button>`
+            ? `<button class="btn danger" data-action="stop-timer">stop <span class="timer-count">${clock(remainingMs())}</span></button>`
             : `<button class="btn quiet" data-action="start-timer" data-id="${p.id}"
-                 title="start a one hour session on this concept" aria-label="start a session">${icon('play')}</button>`}
+                 title="start a one hour session on this concept">start</button>`}
           <a class="btn quiet yt" href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery(p, track))}"
              target="_blank" rel="noreferrer" data-action="lookup"
              title="youtube: ${esc(searchQuery(p, track))}">${icon('video')} youtube</a>
         </span>
       </div>`;
 
-      if (!open) return `<article class="concept ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}</article>`;
+      if (!open) return `<article class="concept ${p.status === 'closed' ? 'is-closed' : ''} ${isCurrent ? 'current' : ''}" data-card="${p.id}">${row}</article>`;
 
       const shows = (key, hasContent) => hasContent || state.reveal[`${p.id}:${key}`];
       const hasGate = p.gate && p.gate.trim() && p.gate.trim() !== 'none';
@@ -419,7 +421,7 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
       const toggles = optional.filter(([, n]) => !n)
         .map(([key, , word]) => [key, !!state.reveal[`${p.id}:${key}`], word]);
 
-      return `<article class="concept open ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}
+      return `<article class="concept open ${p.status === 'closed' ? 'is-closed' : ''} ${isCurrent ? 'current' : ''}" data-card="${p.id}">${row}
         <div class="cbody">
           ${running ? timerPanel() : ''}
           ${blocked && p.status !== 'not started' && p.status !== 'closed'

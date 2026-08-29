@@ -238,7 +238,9 @@ input[type=checkbox]:checked::after {
   border-left: 2px solid transparent;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.tracks li:hover { background: var(--surface-2); color: var(--fg); }
+/* the row fills left to right as the track completes */
+.tracks li { background: linear-gradient(90deg, var(--accent-wash) var(--fill, 0%), transparent var(--fill, 0%)); }
+.tracks li:hover { background: linear-gradient(90deg, var(--accent-wash) var(--fill, 0%), transparent var(--fill, 0%)), var(--surface-2); color: var(--fg); }
 .tracks li[aria-current="true"] { background: var(--surface-3); color: var(--fg); border-left-color: var(--accent); }
 .tracks li .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tracks li .n { font: 11px/1 var(--mono); color: var(--fg-3); flex: none; }
@@ -300,6 +302,8 @@ input[type=checkbox]:checked::after {
 .crow .name { font-size: 14px; letter-spacing: -.005em; }
 .crow .name .code { font-family: var(--mono); font-size: 12px; color: var(--fg-3); margin-right: 8px; }
 .concept.is-closed .crow .name { color: var(--fg-3); }
+.concept.current { box-shadow: inset 2px 0 0 var(--accent); background: var(--accent-wash); }
+.concept.current .crow .name { color: var(--fg); }
 .crow .hours { font: 11px/1 var(--mono); color: var(--fg-3); }
 .crow .right { margin-left: auto; display: flex; align-items: center; gap: var(--s3); }
 .crow .counts { font: 11px/1 var(--mono); color: var(--fg-3); white-space: nowrap; }

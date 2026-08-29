@@ -22,7 +22,6 @@ const PATHS = {
   flask: '<path d="M6.4 2h3.2M6.9 2v4L3.6 12a1.2 1.2 0 0 0 1 1.9h6.8a1.2 1.2 0 0 0 1-1.9L9.1 6V2"/><path d="M5.2 9.4h5.6"/>',
   panel: '<rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M10 3v10"/>',
   database: '<ellipse cx="8" cy="4" rx="5" ry="2.1"/><path d="M3 4v8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1V4"/><path d="M3 8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1"/>',
-  wall: '<path d="M2.5 5.5h11M2.5 10.5h11M6 3v2.5M10.5 5.5V8M6 8v2.5M4 10.5V13M11 10.5V13"/>',
   circle: '<circle cx="8" cy="8" r="4.2"/>',
   dot: '<circle cx="8" cy="8" r="3.4" fill="currentColor" stroke="none"/>',
   arrowDown: '<path d="M8 3v10M4.5 9.5 8 13l3.5-3.5"/>',

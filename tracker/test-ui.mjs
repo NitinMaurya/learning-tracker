@@ -312,11 +312,24 @@ const c3 = (await sql("SELECT id FROM concepts WHERE num='03'"))[0].id;
 const c5 = (await sql("SELECT id FROM concepts WHERE num='05'"))[0].id;
 await sql(`INSERT INTO edges VALUES ('e-test', '${c5}', '${c3}')`);
 await fire('click', mk({ action: 'set-view', view: 'list' }));
-check('gating follows the graph, not list position', has('gated: 05 is not closed'));
+// the row carries no gate marker now; gating shows when you open a gated concept
+await sql(`UPDATE phases SET status='building' WHERE id='${c3}'`);
+await fire('click', mk({ action: 'toggle-phase', id: c3 }));
+check('gating follows the graph, not list position', has('Gate not paid') && has('05 is not closed'));
+check('no gate marker in the row', !/class="status gated"/.test(dash()));
+check('the concept being worked on is highlighted', /class="concept[^"]*current"/.test(dash()));
+check('each track in the rail shows its progress as a fill', /data-action="select-track"[^>]*style="--fill:\d+%"/.test(dash()));
 
 await sql("DELETE FROM edges WHERE id = 'e-test'");
 await fire('click', mk({ action: 'set-view', view: 'list' }));
-check('deleting the edge releases the gate', !has('gated: 05 is not closed'));
+// with the edge gone, gating falls back to list position, so close whatever precedes it
+const order = (await sql('SELECT id FROM phases WHERE track_id = (SELECT track_id FROM phases WHERE id = ?) ORDER BY pos'.replace('?', `'${c3}'`))).map((r) => r.id);
+const beforeC3 = order[order.indexOf(c3) - 1];
+if (beforeC3) await fire('click', mk({ action: 'done', id: beforeC3 }, { checked: true }));
+check('deleting the edge releases the gate', !has('Gate not paid'));
+if (beforeC3) await fire('click', mk({ action: 'done', id: beforeC3 }, { checked: false }));
+await sql(`UPDATE phases SET status='not started' WHERE id='${c3}'`);
+await fire('click', mk({ action: 'toggle-phase', id: c3 }));
 
 await sql(`INSERT INTO edges VALUES ('e-test2', '${c5}', '${c3}')`);
 await fire('click', mk({ action: 'apply-order' }));
