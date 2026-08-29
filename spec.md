@@ -1,4 +1,4 @@
-# ai-lab — spec
+# learning tracker — spec
 
 Learning system for AI engineering. Build-and-fail, not read-and-summarise.
 
@@ -28,7 +28,7 @@ This document is the contract. If a decision isn't covered here, default to
 ## 2. Repo layout
 
 ```
-ai-lab/
+learning-tracker/
 ├── SPEC.md                 this document
 ├── README.md               dashboard — status table, current phase
 ├── CONFUSIONS.md           append-only interest queue
