@@ -320,6 +320,13 @@ check('setup: the doomed roadmap has a file on disk',
   !!doomedDoc && (await globalThis.fetch('/files/' + encodeURIComponent(doomedDoc.stored))).status === 200);
 
 await fire('click', mk({ action: 'del-roadmap', id: 'rm-x' }));
+check('the roadmap delete control can actually appear', await (async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync(new URL('style.css', import.meta.url), 'utf8');
+  const reveal = css.slice(css.indexOf('.iconbtn:focus-visible') - 400, css.indexOf('.iconbtn:focus-visible'));
+  return reveal.includes('.rm-head:hover .iconbtn');
+})());
+check('the drawer close button gets a glyph', (nodes['#drawer .drawer-head .iconbtn']?.innerHTML || '').includes('<svg'));
 check('delete asks first, naming what goes',
   dash().includes('rm-confirm') && dash().includes('Doomed') && dash().includes('cannot be undone'));
 await fire('click', mk({ action: 'cancel-del-roadmap' }));

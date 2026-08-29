@@ -1335,6 +1335,9 @@ $('#restoreFile').onchange = async (e) => {
 (async () => {
   try {
     await boot();
+    // the shell ships without icon markup; one source for glyphs is icons.js
+    const closeBtn = $('#drawer .drawer-head .iconbtn');
+    if (closeBtn) closeBtn.innerHTML = icon('close');
     $('#status').textContent = 'sqlite · ai-lab.db';
     showTab('dashboard');
     tick();

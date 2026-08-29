@@ -139,7 +139,16 @@ button, input, select, textarea { font-family: inherit; font-size: 13px; color: 
 }
 .iconbtn:hover { color: var(--fg); background: var(--surface-3); }
 .iconbtn.danger:hover { color: var(--alert); }
-li:hover .iconbtn, tr:hover .iconbtn, .iconbtn:focus-visible { opacity: 1; }
+/* every container that owns a row-level action must reveal it */
+li:hover .iconbtn,
+tr:hover .iconbtn,
+.rm-head:hover .iconbtn,
+.crow:hover .iconbtn,
+.panel-head:hover .iconbtn,
+.iconbtn:focus-visible { opacity: 1; }
+
+/* no hover to reveal with: show them */
+@media (hover: none) { .iconbtn { opacity: 1; } }
 
 input[type=text], input[type=number], input[type=date], input[type=search], textarea, select {
   width: 100%;
