@@ -428,8 +428,7 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
             : ''}
 
           ${p.practical
-            ? `<div class="field"><label>practical checkpoint</label>
-                <div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
+            ? `<div class="field"><div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
             : ''}
           ${hasGate ? `<div class="field"><label>gate</label><div class="ro">${esc(p.gate)}</div></div>` : ''}
           ${spec.length

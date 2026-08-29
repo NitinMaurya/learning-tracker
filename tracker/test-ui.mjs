@@ -210,8 +210,8 @@ await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,ear
 await fire('click', mk({ action: 'select-track', id: 'tr-2' }));
 check('selecting a track swaps the concepts column', has('KV cache mechanics') && !has('tool-calling'));
 await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));
-check('opening a light concept shows its practical checkpoint',
-  has('practical checkpoint') && has('compute the cache for a 7B model'));
+check('opening a light concept shows its checkpoint, with no label above it',
+  has('compute the cache for a 7B model') && !dash().includes('practical checkpoint'));
 check('every concept row carries a youtube search for itself',
   /class="btn quiet yt"[^>]*youtube\.com\/results\?search_query=KV%20cache%20mechanics/.test(dash()));
 check('no status control anywhere', !dash().includes('data-action="status"') && !drawer().includes('data-action="status"'));
@@ -351,7 +351,7 @@ check('importing writes the roadmap, its tracks and its concepts', !!imported &&
   (await sql(`SELECT count(*) c FROM tracks WHERE roadmap_id='${imported.id}'`))[0].c === 2 &&
   (await sql("SELECT count(*) c FROM phases WHERE num='C1'"))[0].c === 1);
 const c1row = (await sql("SELECT hours, practical FROM phases WHERE num='C1'"))[0];
-check('hours and the practical checkpoint come across', c1row.hours === 2 && !!c1row.practical);
+check('hours and the checkpoint text come across', c1row.hours === 2 && !!c1row.practical);
 await globalThis.fetch('/api/delete-roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ id: imported.id }) });
 
