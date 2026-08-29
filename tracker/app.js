@@ -35,6 +35,7 @@ let state = {
   sessionsAll: false,
   newPhase: false,
   confirmDel: null,
+  reveal: {},          // `${conceptId}:${block}` the user asked to see
   seKind: 'build',
   dragId: null,
   drawer: localStorage.getItem('lt-drawer') === '1',
@@ -366,6 +367,18 @@ function conceptsHtml(phases, allPhases = phases) {
 
       if (!open) return `<article class="concept ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}</article>`;
 
+      const shows = (key, hasContent) => hasContent || state.reveal[`${p.id}:${key}`];
+      const unitOpen = unit || state.reveal[`${p.id}:build`];
+      const hasGate = p.gate && p.gate.trim() && p.gate.trim() !== 'none';
+
+      const optional = [
+        ['confusions', p.confusions.length, 'confusion'],
+        ['notes', p.notes.length, 'note'],
+        ['sources', p.sources.length, 'source'],
+        ['documents', p.docs.length, 'file'],
+      ];
+      const addable = optional.filter(([key, n]) => !shows(key, n));
+
       return `<article class="concept open ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}
         <div class="cbody">
           ${running ? timerPanel() : ''}
@@ -377,51 +390,28 @@ function conceptsHtml(phases, allPhases = phases) {
             ? `<div class="field"><label>practical checkpoint</label>
                 <div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
             : ''}
-          <div class="field"><label>gate</label><div class="ro">${esc(p.gate || 'none')}</div></div>
+          ${hasGate ? `<div class="field"><label>gate</label><div class="ro">${esc(p.gate)}</div></div>` : ''}
 
-          ${['build', 'verify_txt', 'wall', 'earned']
-            .map(
-              (f) => `<div class="field">
-                <label>${f === 'verify_txt' ? 'verify' : f === 'earned' ? 'earned concepts' : f}</label>
-                <textarea data-action="field" data-id="${p.id}" data-field="${f}"
-                  placeholder="${f === 'wall' ? 'the failure you expect to hit and not be able to explain' : ''}">${esc(p[f])}</textarea>
-              </div>`
-            )
-            .join('')}
+          ${unitOpen ? unitFields(p) : ''}
+          ${shows('confusions', p.confusions.length) ? confusionsBlock(p) : ''}
+          ${shows('notes', p.notes.length) ? notesBlock(p, allPhases) : ''}
+          ${shows('sources', p.sources.length) ? sourcesBlock(p) : ''}
+          ${shows('documents', p.docs.length) ? docsBlock(p) : ''}
 
-          <div class="field">
-            <label>break on purpose</label>
-            <ul class="list">
-              ${p.breaks.map((b) => breakItem(b, p.id)).join('') ||
-                '<li class="empty">Nothing listed. Name the failures you intend to cause; if nothing broke, the build was too easy.</li>'}
-            </ul>
-            <input type="text" placeholder="add a failure to induce" data-action="add-break" data-id="${p.id}"
-              aria-label="add a failure to induce" style="margin-top:8px" />
-          </div>
-
-          <div class="two">
-            <div class="field">
-              <label>${icon('check', { size: 13 })} can explain without notes</label>
-              <ul class="list">${p.can.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
-              <input type="text" placeholder="add a claim" data-action="add-claim" data-kind="can" data-id="${p.id}"
-                aria-label="add a claim you can explain" style="margin-top:8px" />
-            </div>
-            <div class="field">
-              <label>${icon('close', { size: 13 })} still can't explain</label>
-              <ul class="list">${p.cannot.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
-              <input type="text" placeholder="add a gap, also filed as a confusion" data-action="add-claim" data-kind="cannot" data-id="${p.id}"
-                aria-label="add a gap" style="margin-top:8px" />
-            </div>
-          </div>
-
-          ${!canClose(p) && p.status !== 'closed' && unit
-            ? `<p class="note">Closes only when <em>both</em> exit lists have entries. An empty "still can't explain" means you weren't honest, not that you're done.</p>`
+          ${addable.length || !unitOpen
+            ? `<div class="addbar">
+                <span class="note">add</span>
+                ${!unitOpen
+                  ? `<button class="btn" data-action="reveal" data-id="${p.id}" data-key="build">${icon('plus')} build</button>`
+                  : ''}
+                ${addable.map(([key, , word]) =>
+                  `<button class="btn quiet" data-action="reveal" data-id="${p.id}" data-key="${key}">${icon('plus')} ${word}</button>`).join('')}
+              </div>
+              ${!unitOpen
+                ? `<p class="note" style="margin-top:8px">This one is a checkbox: tick it when you can explain it and did the checkpoint.
+                   Adding a build turns it into a unit, and the exit rule starts applying.</p>`
+                : ''}`
             : ''}
-
-          ${confusionsBlock(p)}
-          ${notesBlock(p, allPhases)}
-          ${sourcesBlock(p)}
-          ${docsBlock(p)}
         </div>
       </article>`;
     })
@@ -441,6 +431,50 @@ function conceptsHtml(phases, allPhases = phases) {
   return cards || form
     ? cards + form
     : '<p class="empty" style="padding:16px">No concepts in this track yet. Add one, or pick another track.</p>';
+}
+
+function unitFields(p) {
+  const done = p.breaks.filter((b) => b.done).length;
+  return `
+    ${['build', 'verify_txt', 'wall', 'earned']
+      .map(
+        (f) => `<div class="field">
+          <label>${f === 'verify_txt' ? 'verify' : f === 'earned' ? 'earned concepts' : f}</label>
+          <textarea data-action="field" data-id="${p.id}" data-field="${f}"
+            placeholder="${f === 'wall' ? 'the failure you expect to hit and not be able to explain' : ''}">${esc(p[f])}</textarea>
+        </div>`
+      )
+      .join('')}
+
+    <div class="field">
+      <label>break on purpose</label>
+      <ul class="list">
+        ${p.breaks.map((b) => breakItem(b, p.id)).join('') ||
+          '<li class="empty">Name the failures you intend to cause. If nothing broke, the build was too easy.</li>'}
+      </ul>
+      <input type="text" placeholder="add a failure to induce" data-action="add-break" data-id="${p.id}"
+        aria-label="add a failure to induce" style="margin-top:8px" />
+    </div>
+
+    <div class="two">
+      <div class="field">
+        <label>${icon('check', { size: 13 })} can explain without notes</label>
+        <ul class="list">${p.can.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
+        <input type="text" placeholder="add a claim" data-action="add-claim" data-kind="can" data-id="${p.id}"
+          aria-label="add a claim you can explain" style="margin-top:8px" />
+      </div>
+      <div class="field">
+        <label>${icon('close', { size: 13 })} still can't explain</label>
+        <ul class="list">${p.cannot.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
+        <input type="text" placeholder="add a gap, also filed as a confusion" data-action="add-claim" data-kind="cannot" data-id="${p.id}"
+          aria-label="add a gap" style="margin-top:8px" />
+      </div>
+    </div>
+
+    ${!canClose(p) && p.status !== 'closed' && (p.breaks.length || p.build)
+      ? `<p class="note">Closes only when <em>both</em> exit lists have entries. An empty "still can't explain" means you weren't honest, not that you're done.</p>`
+      : ''}
+    <span hidden>${done}</span>`;
 }
 
 function timerPanel() {
@@ -969,6 +1003,9 @@ document.addEventListener('click', async (e) => {
       document.querySelector('.concept.open')?.scrollIntoView({ block: 'center' });
       return;
     }
+    case 'reveal':
+      state.reveal[`${id}:${el.dataset.key}`] = true;
+      return render();
     case 'toggle-phase':
       state.open = state.open === id ? null : id;
       state.edit = null;

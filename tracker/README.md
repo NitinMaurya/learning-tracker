@@ -55,7 +55,9 @@ roadmap   AI Engineer Practical Roadmap     several can coexist
 ```
 
 A concept starts light: a title, its planned hours and a practical checkpoint,
-ticked when you can explain it and did the checkpoint. When a concept is one you
+ticked when you can explain it and did the checkpoint. Opening one shows the
+checkpoint and an add bar, nothing else. Blocks appear when they hold something
+or when you ask for them, so an empty concept is never ten empty forms. When a concept is one you
 actually **build**, open it and fill in build / verify / break-on-purpose / wall
 / exit — it then carries sessions, confusions, notes, sources and documents, and
 the spec's rules kick in (no closing without both exit lists). Most concepts stay

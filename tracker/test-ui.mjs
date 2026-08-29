@@ -95,7 +95,12 @@ check('manual session form removed', !has('data-action="add-session"') && !has('
 
 // expand
 await fire('click', mk({ action: 'toggle-phase', id: c1 }));
-check('concept expands with all sections', has('break on purpose') && has('confusions') && has('notes') && has('sources') && has('documents'));
+check('a unit opens with its spine', has('break on purpose') && has('can explain without notes') && has('still can\'t explain'));
+check('empty blocks wait behind an add bar instead of filling the page',
+  has('addbar') && !has('A note is a claim') && !has('Read only what the wall entitles'));
+for (const key of ['confusions', 'notes', 'sources', 'documents'])
+  await fire('click', mk({ action: 'reveal', id: c1, key }));
+check('asking for a block shows it', has('confusions') && has('A note is a claim') && has('one line: what it changed'));
 
 // breaks + trace
 const b1 = (await sql(`SELECT id FROM breaks WHERE phase_id='${c1}' ORDER BY pos`))[0].id;
@@ -209,6 +214,11 @@ check('a light concept shows hours and no unit counts', has('3h') && !/KV cache[
 await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));
 check('opening a light concept shows its practical checkpoint',
   has('practical checkpoint') && has('compute the cache for a 7B model'));
+check('a light concept opens without the unit spine',
+  !/KV cache[\s\S]*?break on purpose/.test(dash()) && has('data-key="build"') && has('This one is a checkbox'));
+check('a light concept hides an empty gate', !/KV cache[\s\S]{0,600}>gate</.test(dash()));
+await fire('click', mk({ action: 'reveal', id: 'k-I3', key: 'build' }));
+check('adding a build turns it into a unit', has('break on purpose'));
 await fire('click', mk({ action: 'done', id: 'k-I3' }, { checked: true }));
 check('ticking a light concept closes it without the exit-list rule',
   (await sql("SELECT status FROM phases WHERE id='k-I3'"))[0].status === 'closed');
