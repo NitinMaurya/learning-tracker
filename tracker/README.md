@@ -46,6 +46,30 @@ badge counts open confusions so the queue still nags without taking up room.
 Sections collapse and remember their state. `⏎` submits every add-field, `esc`
 cancels an inline editor, `⌘⏎` saves a note.
 
+## Importing a roadmap
+
+`import a .md roadmap` at the bottom of the rail takes any Markdown document, has
+a model turn it into roadmap / tracks / concepts, and shows you what it found:
+the name, the track list, concept counts and total hours. Nothing is written
+until you press import.
+
+The model call happens on the server, so the API key never reaches the browser.
+Point it at any OpenAI-compatible endpoint, or at Anthropic:
+
+```bash
+export LT_LLM_KEY=sk-...                      # or OPENAI_API_KEY / ANTHROPIC_API_KEY
+export LT_LLM_MODEL=gpt-4o-mini               # any model the endpoint serves
+export LT_LLM_BASE=https://api.openai.com/v1  # Groq, Together, OpenRouter, vLLM, llama.cpp
+python3 tracker/server.py
+```
+
+A base URL containing `anthropic` switches to the `/v1/messages` shape
+automatically. Settings can also live in `tracker/llm.json` (gitignored) with
+`base`, `model` and `key`. Long documents are split on top level headings, sent
+in parts and merged, and the model's output is validated before it reaches the
+database: types checked, strings capped, codes deduplicated, 600 concepts max.
+Nothing the model returns is trusted as SQL.
+
 ## Roadmaps, tracks, concepts
 
 ```

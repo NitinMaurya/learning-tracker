@@ -16,6 +16,8 @@ import re
 import uuid
 import sqlite3
 import sys
+import urllib.error
+import urllib.request
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -26,6 +28,150 @@ TABLES = ["phases", "breaks", "claims", "confusions", "parked", "sources", "sess
 
 FILES = os.path.join(HERE, "files")   # uploaded documents live here
 TRASH = os.path.join(HERE, "trash")   # snapshots taken before a destructive delete
+
+# Any OpenAI-compatible chat endpoint: OpenAI, Groq, Together, OpenRouter, a local
+# vLLM or llama.cpp server. Anthropic's /v1/messages shape is handled too.
+# Configure with env vars or tracker/llm.json (gitignored). Keys are never sent to
+# the browser and never logged.
+MAX_MARKDOWN = 400_000
+CHUNK = 24_000
+
+
+def llm_config():
+    cfg = {"base": "https://api.openai.com/v1", "model": "gpt-4o-mini", "key": None}
+    path = os.path.join(HERE, "llm.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            cfg.update({k: v for k, v in json.load(f).items() if k in cfg})
+    cfg["base"] = os.environ.get("LT_LLM_BASE", cfg["base"]).rstrip("/")
+    cfg["model"] = os.environ.get("LT_LLM_MODEL", cfg["model"])
+    cfg["key"] = (os.environ.get("LT_LLM_KEY") or os.environ.get("OPENAI_API_KEY")
+                  or os.environ.get("ANTHROPIC_API_KEY") or cfg["key"])
+    return cfg
+
+
+def llm_json(system, user):
+    """One call, JSON back. Raises RuntimeError with something a human can act on."""
+    stub = os.environ.get("LT_LLM_STUB")           # tests run without a provider
+    if stub:
+        with open(stub) as f:
+            return json.load(f)
+
+    cfg = llm_config()
+    if not cfg["key"]:
+        raise RuntimeError("No API key. Set LT_LLM_KEY (or OPENAI_API_KEY) and restart the server.")
+
+    anthropic = "anthropic" in cfg["base"]
+    if anthropic:
+        url = cfg["base"] + "/messages"
+        headers = {"x-api-key": cfg["key"], "anthropic-version": "2023-06-01",
+                   "content-type": "application/json"}
+        body = {"model": cfg["model"], "max_tokens": 8000, "system": system,
+                "messages": [{"role": "user", "content": user}]}
+    else:
+        url = cfg["base"] + "/chat/completions"
+        headers = {"Authorization": "Bearer " + cfg["key"], "content-type": "application/json"}
+        body = {"model": cfg["model"], "temperature": 0,
+                "response_format": {"type": "json_object"},
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": user}]}
+
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            payload = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("%s said %s: %s" % (cfg["base"], e.code, e.read().decode()[:300]))
+    except Exception as e:
+        raise RuntimeError("could not reach %s: %s" % (cfg["base"], e))
+
+    text = (payload["content"][0]["text"] if anthropic
+            else payload["choices"][0]["message"]["content"]).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-z]*\n|\n```$", "", text)
+    try:
+        return json.loads(text)
+    except ValueError:
+        raise RuntimeError("the model did not return JSON: %s" % text[:200])
+
+
+IMPORT_SYSTEM = """You convert a learning roadmap written in Markdown into structured JSON.
+
+Return ONLY a JSON object of this shape:
+{"name": "<roadmap name>",
+ "tracks": [{"title": "<track title>",
+             "concepts": [{"code": "<short id like F1 or 1.2, from the document if it has one>",
+                           "name": "<concept name, under 90 characters>",
+                           "hours": <number or null>,
+                           "practical": "<the practical checkpoint or exercise, or null>"}]}]}
+
+Rules:
+- Use the document's own words. Do not invent concepts, hours or checkpoints.
+- A track is a top level grouping (a section, module, phase or part). A concept is
+  one learnable item inside it.
+- If the document has no codes, number them within the track: 1, 2, 3.
+- If a concept has no stated hours or checkpoint, use null. Never guess a number.
+- No commentary, no markdown fences, JSON only."""
+
+
+def parse_markdown(md, name_hint=None):
+    """Split on top level headings so a long document still fits, then merge."""
+    md = md[:MAX_MARKDOWN]
+    parts, current = [], ""
+    for line in md.splitlines(keepends=True):
+        if line.startswith("## ") and len(current) > CHUNK:
+            parts.append(current)
+            current = line
+        else:
+            current += line
+    parts.append(current)
+
+    # the document names itself; the filename is only a fallback
+    name, tracks = None, []
+    for i, part in enumerate(parts):
+        got = llm_json(IMPORT_SYSTEM, "Document part %d of %d:\n\n%s" % (i + 1, len(parts), part))
+        name = name or (got.get("name") or "").strip() or None
+        for t in got.get("tracks") or []:
+            title = (t.get("title") or "untitled").strip()
+            match = next((x for x in tracks if x["title"].lower() == title.lower()), None)
+            if match:
+                match["concepts"].extend(t.get("concepts") or [])
+            else:
+                tracks.append({"title": title, "concepts": t.get("concepts") or []})
+    return {"name": name or name_hint or "imported roadmap", "tracks": tracks}
+
+
+def clean_proposal(p):
+    """Never trust the model with the database: shape, types and limits, all checked."""
+    if not isinstance(p, dict):
+        raise ValueError("expected an object")
+    name = str(p.get("name") or "imported roadmap").strip()[:120]
+    tracks, total, seen = [], 0, set()
+    for t in (p.get("tracks") or [])[:60]:
+        if not isinstance(t, dict):
+            continue
+        concepts = []
+        for c in (t.get("concepts") or [])[:300]:
+            if not isinstance(c, dict) or not str(c.get("name") or "").strip():
+                continue
+            if total >= 600:
+                break
+            code = str(c.get("code") or "").strip()[:12] or str(len(concepts) + 1)
+            while code.lower() in seen:
+                code += "'"
+            seen.add(code.lower())
+            hours = c.get("hours")
+            hours = float(hours) if isinstance(hours, (int, float)) and 0 < float(hours) < 1000 else None
+            practical = str(c.get("practical")).strip()[:600] if c.get("practical") else None
+            concepts.append({"code": code, "name": str(c["name"]).strip()[:200],
+                             "hours": hours, "practical": practical})
+            total += 1
+        if concepts:
+            tracks.append({"title": str(t.get("title") or "untitled").strip()[:160], "concepts": concepts})
+    if not tracks:
+        raise ValueError("no concepts found in that file")
+    return {"name": name, "tracks": tracks, "concepts": total,
+            "hours": round(sum(c["hours"] or 0 for t in tracks for c in t["concepts"]), 1)}
 MAX_UPLOAD = 50 * 1024 * 1024
 
 SCHEMA = """
@@ -196,6 +342,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._reset()
             if self.path == "/api/delete-roadmap":
                 return self._delete_roadmap()
+            if self.path == "/api/import-parse":
+                return self._import_parse()
+            if self.path == "/api/import-commit":
+                return self._import_commit()
         except Exception as e:  # surface SQL errors to the console tab
             return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 400)
         self.send_error(404)
@@ -313,6 +463,42 @@ class Handler(SimpleHTTPRequestHandler):
             con.close()
         return self._json({"ok": True, "tracks": len(tracks), "concepts": len(concepts),
                            "files": files, "snapshot": os.path.basename(snapshot)})
+
+    def _import_parse(self):
+        body = self._body()
+        md = body.get("markdown") or ""
+        if not md.strip():
+            return self._json({"error": "that file is empty"}, 400)
+        try:
+            proposal = clean_proposal(parse_markdown(md, (body.get("name") or "").strip() or None))
+        except (RuntimeError, ValueError) as e:
+            return self._json({"error": str(e)}, 400)
+        return self._json({"ok": True, "proposal": proposal, "model": llm_config()["model"]})
+
+    def _import_commit(self):
+        try:
+            p = clean_proposal(self._body().get("proposal"))
+        except ValueError as e:
+            return self._json({"error": str(e)}, 400)
+
+        con = connect()
+        try:
+            rid = "rm-" + uuid.uuid4().hex[:10]
+            pos = (con.execute("SELECT max(pos) FROM roadmaps").fetchone()[0] or -1) + 1
+            con.execute("INSERT INTO roadmaps VALUES (?,?,?,?)",
+                        (rid, p["name"], "imported %s" % datetime.date.today().isoformat(), pos))
+            for ti, t in enumerate(p["tracks"]):
+                tid = "tr-" + uuid.uuid4().hex[:10]
+                con.execute("INSERT INTO tracks VALUES (?,?,?,?,?)", (tid, rid, str(ti + 1), t["title"], ti))
+                for ci, c in enumerate(t["concepts"]):
+                    con.execute(
+                        "INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,"
+                        "last_touched,track_id,hours,practical) VALUES (?,?,?,'not started','','','','','',?,NULL,?,?,?)",
+                        ("k-" + uuid.uuid4().hex[:10], c["code"], c["name"], ci, tid, c["hours"], c["practical"]))
+            con.commit()
+        finally:
+            con.close()
+        return self._json({"ok": True, "id": rid, "tracks": len(p["tracks"]), "concepts": p["concepts"]})
 
     def _snapshot_roadmap(self, con, rid):
         """Write everything a roadmap owns to trash/ before deleting it.

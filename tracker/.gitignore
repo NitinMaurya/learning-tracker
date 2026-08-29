@@ -5,3 +5,4 @@ learning-tracker.db-wal
 learning-tracker.db-shm
 ai-lab.db*
 trash/
+llm.json

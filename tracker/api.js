@@ -76,3 +76,13 @@ export async function deleteDoc(id) {
 export async function deleteRoadmap(id) {
   return post('/api/delete-roadmap', { id });
 }
+
+/* ---------- roadmap import ---------- */
+
+export async function importParse(markdown, name) {
+  return post('/api/import-parse', { markdown, name });
+}
+
+export async function importCommit(proposal) {
+  return post('/api/import-commit', { proposal });
+}

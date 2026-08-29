@@ -1,4 +1,4 @@
-import { boot, all, run, save, load, exportJson, upload, deleteDoc, deleteRoadmap, q, uid, today, now, TABLES } from './api.js';
+import { boot, all, run, save, load, exportJson, upload, deleteDoc, deleteRoadmap, importParse, importCommit, q, uid, today, now, TABLES } from './api.js';
 import { graphHtml, mountGraph, topoOrder, autoPos } from './graph.js';
 import { icon, fileIcon } from './icons.js';
 
@@ -28,6 +28,7 @@ let state = {
   sessionsAll: false,
   newPhase: false,
   confirmDel: null,
+  imp: null,            // { state: 'parsing'|'preview'|'error', proposal, error, file }
   reveal: {},          // `${conceptId}:${block}` the user asked to see
   seKind: 'build',
   dragId: null,
@@ -234,6 +235,7 @@ async function renderDashboard() {
             </section>`
           : ''}
 
+        ${importPanel()}
         ${panel('concepts',
           track ? `${roadmap ? esc(roadmap.name.split(' - ')[0].trim()) + ' / ' : ''}${esc(track.title)}` : 'concepts',
           `${trackDone}/${inTrack.length}`,
@@ -259,6 +261,49 @@ async function renderDashboard() {
   badge.textContent = openConf;
   $('#drawer').classList.toggle('open', state.drawer);
   $('#backdrop').hidden = !state.drawer;
+}
+
+/* ---------- import a roadmap from markdown ---------- */
+
+function importPanel() {
+  const imp = state.imp;
+  if (!imp) return '';
+
+  if (imp.state === 'parsing')
+    return `<section class="panel open"><div class="panel-body">
+      <div class="row"><span class="spin">${icon('clock')}</span>
+        <span>Reading <b>${esc(imp.file)}</b> with the model. A long document is sent in parts, so this can take a minute.</span></div>
+    </div></section>`;
+
+  if (imp.state === 'error')
+    return `<section class="panel open"><div class="panel-body">
+      <div class="warnbox">${icon('warning')} ${esc(imp.error)}</div>
+      <button class="btn" data-action="import-cancel">close</button>
+    </div></section>`;
+
+  const p = imp.proposal;
+  return `<section class="panel open">
+    <div class="panel-head" style="cursor:default">
+      <span class="title">import: ${esc(p.name)}</span>
+      <span class="count">${p.tracks.length} tracks · ${p.concepts} concepts${p.hours ? ` · ${p.hours}h` : ''}</span>
+      <span class="right">
+        <button class="btn primary" data-action="import-commit">${icon('check')} import</button>
+        <button class="btn" data-action="import-cancel">cancel</button>
+      </span>
+    </div>
+    <div class="panel-body">
+      <p class="note" style="margin-bottom:12px">From <b>${esc(imp.file)}</b>, read by <span class="mono">${esc(imp.model)}</span>.
+        Nothing is written until you press import.</p>
+      <ul class="list">
+        ${p.tracks.map((t) => `<li>
+          <span class="txt">
+            <span class="main">${esc(t.title)}</span>
+            <span class="sub">${t.concepts.length} concepts: ${esc(t.concepts.slice(0, 6).map((c) => c.name).join(', '))}${t.concepts.length > 6 ? ', and more' : ''}</span>
+          </span>
+        </li>`).join('')}
+      </ul>
+    </div>
+  </section>`;
 }
 
 /* ---------- rail: roadmap > track tree ---------- */
@@ -311,6 +356,10 @@ function treeRail(phases) {
     ${phases.roadmaps.length ? '' : '<p class="empty" style="padding:12px 16px">No roadmaps. Add one below; it starts with a single track you can rename.</p>'}
     <div class="rail-add">
       <input type="text" id="rm-new" placeholder="new roadmap" data-action="add-roadmap" aria-label="add roadmap" />
+      <label class="btn quiet" style="margin-top:8px;width:100%;justify-content:center">
+        <input type="file" accept=".md,.markdown,.txt,text/markdown" hidden data-action="import-file" />
+        ${icon('upload')} import a .md roadmap
+      </label>
     </div>`;
 }
 
@@ -837,6 +886,25 @@ document.addEventListener('click', async (e) => {
       state.open = null;
       localStorage.setItem('lt-track', id);
       return render();
+    case 'import-cancel':
+      state.imp = null;
+      return render();
+    case 'import-commit': {
+      const proposal = state.imp?.proposal;
+      if (!proposal) return;
+      state.imp = { state: 'parsing', file: proposal.name };
+      await render();
+      try {
+        const res = await importCommit(proposal);
+        state.imp = null;
+        state.track = null;
+        localStorage.removeItem('lt-track');
+        return after(`imported ${res.concepts} concepts in ${res.tracks} tracks`);
+      } catch (err) {
+        state.imp = { state: 'error', error: err.message };
+        return render();
+      }
+    }
     case 'del-roadmap':
       state.confirmDel = id;
       state.collapsed[id] = true;
@@ -1092,6 +1160,21 @@ async function uploadFiles(files, phaseId) {
 document.addEventListener('change', async (e) => {
   const el = e.target.closest('[data-action]');
   if (el?.dataset.action === 'upload') return uploadFiles([...el.files], el.dataset.id);
+
+  if (el?.dataset.action === 'import-file') {
+    const file = el.files?.[0];
+    el.value = '';
+    if (!file) return;
+    state.imp = { state: 'parsing', file: file.name };
+    await render();
+    try {
+      const res = await importParse(await file.text(), file.name.replace(/\.(md|markdown|txt)$/i, ''));
+      state.imp = { state: 'preview', proposal: res.proposal, model: res.model, file: file.name };
+    } catch (err) {
+      state.imp = { state: 'error', error: err.message };
+    }
+    return render();
+  }
 });
 
 /* ---------- drag: reorder concepts, and file drops ---------- */

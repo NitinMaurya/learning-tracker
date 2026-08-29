@@ -319,6 +319,42 @@ await fire('click', mk({ action: 'apply-order' }));
 const ord = (await sql('SELECT num FROM concepts ORDER BY pos')).map((r) => r.num);
 check(`drawing 05 → 03 reorders concepts (${ord.join(',')})`, ord.indexOf('05') < ord.indexOf('03'));
 
+// ---- importing a roadmap from markdown (the model call is stubbed) ----
+const md = '# Distributed Systems\n## Consensus\n- C1 Raft leader election (2h)\n';
+const parsed = await (await globalThis.fetch('/api/import-parse', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ markdown: md }) })).json();
+check('the document names the roadmap, not the filename', parsed.proposal.name === 'Distributed Systems');
+check('a markdown file becomes a roadmap proposal',
+  parsed.ok && parsed.proposal.name === 'Distributed Systems' &&
+  parsed.proposal.tracks.length === 2 && parsed.proposal.concepts === 3 && parsed.proposal.hours === 6.5);
+
+const bad = await (await globalThis.fetch('/api/import-commit', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ proposal: { name: 'x', tracks: [{ title: 't', concepts: [{ name: '' }] }] } }) })).json();
+check('a proposal with nothing usable is refused', !!bad.error);
+
+const roadmapsBefore = (await sql('SELECT count(*) c FROM roadmaps'))[0].c;
+await fire('change', mk({ action: 'import-file' }, { files: [new File([Buffer.from(md)], 'roadmap.md', { type: 'text/markdown' })], value: '' }));
+await wait(1500);
+check('the file is previewed, not imported', has('Nothing is written until you press import') &&
+  has('Distributed Systems') && (await sql('SELECT count(*) c FROM roadmaps'))[0].c === roadmapsBefore);
+await fire('click', mk({ action: 'import-cancel' }));
+check('cancel writes nothing', (await sql('SELECT count(*) c FROM roadmaps'))[0].c === roadmapsBefore);
+
+await fire('change', mk({ action: 'import-file' }, { files: [new File([Buffer.from(md)], 'roadmap.md', { type: 'text/markdown' })], value: '' }));
+await wait(1500);
+await fire('click', mk({ action: 'import-commit' }));
+await wait(1200);
+const imported = (await sql("SELECT id FROM roadmaps WHERE name='Distributed Systems'"))[0];
+check('importing writes the roadmap, its tracks and its concepts', !!imported &&
+  (await sql(`SELECT count(*) c FROM tracks WHERE roadmap_id='${imported.id}'`))[0].c === 2 &&
+  (await sql("SELECT count(*) c FROM phases WHERE num='C1'"))[0].c === 1);
+const c1row = (await sql("SELECT hours, practical FROM phases WHERE num='C1'"))[0];
+check('hours and the practical checkpoint come across', c1row.hours === 2 && !!c1row.practical);
+await globalThis.fetch('/api/delete-roadmap', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: imported.id }) });
+
 // ---- deleting a roadmap cascades, and stops at the roadmap's own edge ----
 await sql("INSERT INTO roadmaps VALUES ('rm-x','Doomed','',9)");
 await sql("INSERT INTO tracks VALUES ('tr-x','rm-x','1','only track',0)");
