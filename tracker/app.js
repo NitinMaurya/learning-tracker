@@ -107,8 +107,7 @@ function tick() {
   const left = remainingMs();
   chip.hidden = false;
   chip.innerHTML = `${icon('clock', { size: 13 })} <b>${clock(left)}</b> ${esc(timer.num)}`;
-  const inline = $('#timer-count');
-  if (inline) inline.textContent = clock(left);
+  document.querySelectorAll('.timer-count').forEach((n) => (n.textContent = clock(left)));
   document.querySelectorAll('.timer .meter > i').forEach((i) => (i.style.width = `${(1 - left / TIMER_MS) * 100}%`));
   if (left <= 0) stopTimer(true);
 }
@@ -227,9 +226,6 @@ async function renderDashboard() {
               ${statusHtml(nextUp.status)}
               <div class="grow"></div>
               <div class="acts">
-                ${timer
-                  ? `<button class="btn danger" data-action="stop-timer">${icon('stop')} stop ${clock(remainingMs())}</button>`
-                  : `<button class="btn primary" data-action="start-timer" data-id="${nextUp.id}">${icon('play')} start session</button>`}
                 <button class="btn" data-action="open-phase" data-id="${nextUp.id}">${icon('arrowDown')} open</button>
               </div>
             </section>`
@@ -388,14 +384,17 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
         <span class="name"><span class="code">${esc(p.num)}</span>${esc(p.name)}</span>
         ${p.hours ? `<span class="hours">${p.hours}h</span>` : ''}
         <span class="right">
-          ${running ? `<span class="status building"><span class="glyph"></span><span id="timer-count">${clock(remainingMs())}</span></span>` : ''}
           ${blocked && p.status !== 'closed' ? `<span class="status gated" title="gated: ${esc(blocked)} is not closed" aria-label="gated: ${esc(blocked)} is not closed">${icon('wall', { size: 13 })}</span>` : ''}
           ${openConf || p.notes.length || p.docs.length
             ? `<span class="counts">${[openConf ? `<span class="warn">${openConf} open</span>` : '',
                 p.notes.length ? `${p.notes.length} notes` : '',
                 p.docs.length ? `${p.docs.length} files` : ''].filter(Boolean).join(' · ')}</span>`
             : ''}
-          ${p.status !== 'not started' ? statusHtml(p.status) : ''}
+          ${p.status !== 'not started' && !running ? statusHtml(p.status) : ''}
+          ${running
+            ? `<button class="btn danger" data-action="stop-timer">${icon('stop')} stop <span class="timer-count">${clock(remainingMs())}</span></button>`
+            : `<button class="btn quiet" data-action="start-timer" data-id="${p.id}"
+                 title="start a one hour session on this concept" aria-label="start a session">${icon('play')}</button>`}
           <a class="btn quiet yt" href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery(p, track))}"
              target="_blank" rel="noreferrer" data-action="lookup"
              title="youtube: ${esc(searchQuery(p, track))}">${icon('video')} youtube</a>
@@ -475,7 +474,7 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
 function timerPanel() {
   const left = remainingMs();
   return `<div class="timer">
-    <span class="count" id="timer-count">${clock(left)}</span>
+    <span class="count timer-count">${clock(left)}</span>
     <span class="note">left of the hour, logging as <b>${esc(timer.kind)}</b></span>
     <button class="btn danger" data-action="stop-timer" style="margin-left:auto">${icon('stop')} stop and log</button>
     <span class="meter"><i style="width:${(1 - left / TIMER_MS) * 100}%"></i></span>

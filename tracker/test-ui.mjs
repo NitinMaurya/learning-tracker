@@ -174,6 +174,10 @@ check('document listed in the concept', has('trace.log'));
 // session timer
 await fire('click', mk({ action: 'start-timer', id: c1 }));
 check('timer starts and shows a countdown', has('timer-count') && !!JSON.parse(store['lt-timer'] || 'null'));
+check('every concept row can start its own session',
+  (dash().match(/data-action="start-timer"/g) || []).length >= 4);
+check('the running concept offers stop in its row',
+  /data-action="stop-timer"[\s\S]{0,400}timer-count/.test(dash()));
 check('starting a session moves the concept to building', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'building');
 check('rail marks the track holding live work', /class="live"/.test(dash()));
 stub('#timer-note').value = 'wired the first tool call';
