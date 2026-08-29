@@ -11,9 +11,9 @@ python3 tracker/server.py                  # serves the app and opens the browse
 python3 tracker/server.py --port 9000 --db ~/learning-tracker.db --no-open
 ```
 
-Stdlib only — nothing to install. First run seeds concepts 01–05 and the parked
-registry from `seed.json` (transcribed from `spec.md` §4 and §6). It seeds only
-when the table is empty, so restarting never touches your work.
+Stdlib only — nothing to install. First run seeds concepts 01–05 from `seed.json`
+(transcribed from `spec.md` §4). It seeds only when the table is empty, so
+restarting never touches your work.
 
 ```bash
 sqlite3 tracker/learning-tracker.db "SELECT num, status, last_touched FROM concepts ORDER BY pos;"
@@ -30,18 +30,14 @@ tabular numerals so counters do not jitter.
 ## Two tabs
 
 **dashboard** — a "current concept + what to do next" banner, then two columns:
-a sticky **progress rail** on the left (one compact row per concept — status,
-gate, wall, breaks bar, exit counts, last touched; click to jump) and the
-concepts themselves on the right. Expanding a concept gives
-the whole unit: gate, build, verify, break-on-purpose (each failure with an
-inline trace editor), wall, earned concepts, the two exit lists, and then its
-own **confusions**, **notes**, **sources and links**, and **documents**. Drag a concept by
-its handle to reorder.
+the **roadmap rail** on the left (roadmap > track tree; click a track to swap the
+column beside it) and the concepts themselves on the right. Expanding a concept
+gives its practical checkpoint and its gate, then its own **confusions**,
+**notes**, **sources and links**, and **documents**. Drag a concept by its handle
+to reorder.
 
-Everything that is not a concept — sessions, the interest queue (every open
-confusion across concepts, click one to jump to it), and the parked registry —
-lives in the **side panel**: `☰ side panel` in the header, `esc` to close. The
-badge counts open confusions so the queue still nags without taking up room.
+Sessions live in a drawer of their own: `sessions` in the header, `esc` to close.
+It is the only thing in there, so it has no panel chrome around it.
 
 Sections collapse and remember their state. `⏎` submits every add-field, `esc`
 cancels an inline editor, `⌘⏎` saves a note.
@@ -98,11 +94,9 @@ ticked when you can explain it and did the checkpoint. Opening one shows the
 checkpoint and an add bar, nothing else. Blocks appear when they hold something
 or when you ask for them, so an empty concept is never ten empty forms. The add
 bar is a toggle: a block you opened by mistake and left empty can be put away
-again, while one holding content stays. When a concept is one you
-actually **build**, open it and fill in build / verify / break-on-purpose / wall
-/ exit — it then carries sessions, confusions, notes, sources and documents, and
-the spec's rules kick in (no closing without both exit lists). Most concepts stay
-a checkbox forever; that is the "earned, not scheduled" rule expressed in data.
+again, while one holding content stays. A concept you actually work carries
+sessions, confusions, notes, sources and documents. Most concepts stay a
+checkbox forever; that is the "earned, not scheduled" rule expressed in data.
 
 The left rail is the roadmap tree; picking a track swaps the concepts column. Deleting a
 roadmap (the x on its header) asks first, naming how many tracks and concepts go with it,
@@ -128,7 +122,9 @@ everything back in one column.
 **sql** — a console over the database with canned queries, plus backup and
 restore. Writes are allowed.
 `concepts` is a view over the `phases` table, which is what the storage still
-calls them; both names work in queries.
+calls them; both names work in queries. `breaks`, `claims` and `parked` are
+tables the interface no longer touches. They stay in the schema and in every
+backup so nothing you logged under the old build/verify machinery is lost.
 
 ## Session timer
 
@@ -138,7 +134,7 @@ hour run out — writes the session automatically with the elapsed minutes, the
 note, and the concept. Starting a session moves a `not started` concept to
 `building`. The timer survives a page reload, and only one runs at a time.
 
-The `build / break / read / dry` control in the sessions panel sets what the
+The `build / break / read / dry` control in the sessions drawer sets what the
 next session is logged as. There is no manual entry — a session exists only if
 the timer recorded it.
 
@@ -157,10 +153,8 @@ out of the repo, so `tracker/.gitignore` excludes that folder and the `.db`.
 
 ## Rules the app enforces
 
-- A concept cannot be set `closed` unless **both** exit lists have entries (§3).
-- Adding a gap to "still can't explain" also files it as a confusion (§3).
-- A concept whose predecessor is not closed is flagged `gated`; moving it off
-  `not started` asks for confirmation.
+- A concept whose prerequisites are not closed is flagged `gated`, and says so
+  on the open concept.
 - A source with no "what it changed" line is rejected (§1.7).
 - Dry sessions over 90 minutes are flagged (§1.5).
 - Confusions are append-only — resolving strikes through and records where the
@@ -190,6 +184,6 @@ node tracker/test-ui.mjs
 | `server.py` | static server + `/api/sql`, `/api/export`, `/api/export-roadmap`, `/api/restore`, `/api/upload` |
 | `api.js` | client for that API |
 | `app.js` | dashboard + sql views, timer, drag-reorder, all actions |
-| `seed.json` | concepts and parked registry from `spec.md` |
+| `seed.json` | concepts from `spec.md` |
 | `test-ui.mjs` | UI regression test |
 | `learning-tracker.db`, `files/` | your data |

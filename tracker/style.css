@@ -426,13 +426,6 @@ tr:last-child td { border-bottom: none; }
   font-size: 13px; font-weight: 550;
 }
 .drawer-head .iconbtn { margin-left: auto; opacity: 1; }
-.drawer .panel { background: none; border-color: var(--line); }
-
-.badge {
-  min-width: 16px; padding: 0 5px; border-radius: 8px;
-  background: var(--accent); color: var(--accent-ink);
-  font: 600 10px/16px var(--mono); text-align: center;
-}
 
 /* ============================ drop zone ============================ */
 
@@ -520,9 +513,6 @@ tr:last-child td { border-bottom: none; }
 .crow .yt { flex: none; }
 .crow .yt:hover { color: var(--accent); border-color: var(--accent-line); }
 .field.lookup label { flex: none; }
-
-.ro.specline { margin-bottom: 10px; }
-.ro.specline b { display: block; font: 11px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--fg-3); margin-bottom: 4px; font-weight: 400; }
 
 .spin { color: var(--accent); line-height: 0; animation: turn 1.6s linear infinite; display: inline-block; }
 @keyframes turn { to { transform: rotate(360deg); } }

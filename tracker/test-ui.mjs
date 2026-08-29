@@ -91,6 +91,17 @@ check('no em-dash in the interface copy', await (async () => {
 })());
 // inline onclick handlers break document-level delegation — never reintroduce them
 check('no inline onclick blocks event delegation', !/onclick=/.test(dash()));
+const files = await (async () => {
+  const fs = await import('node:fs');
+  const read = (f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
+  return { html: read('index.html'), app: read('app.js'), css: read('style.css') };
+})();
+check('the header button and the drawer heading both say sessions',
+  !files.html.includes('side panel') && /toggle-drawer/.test(files.html) &&
+  (files.html.match(/sessions/g) || []).length >= 3);
+check('the queue and parked builders are gone from app.js',
+  !/queueHtml|parkedHtml|panelbadge/.test(files.app) && !/parked/i.test(files.app));
+check('no parked or badge styles left behind', !/\.badge|specline/.test(files.css));
 check('manual session form removed', !has('data-action="add-session"') && !has('log one by hand'));
 
 // expand
@@ -99,8 +110,8 @@ check('empty blocks wait behind an add bar instead of filling the page',
   has('addbar') && !has('A note is a claim') && !has('Read only what the wall entitles'));
 check('no build machinery anywhere', !dash().includes('break on purpose') &&
   !dash().includes('data-action="add-claim"') && !dash().includes('data-key="build"'));
-check('spec.md prose is still shown, read only',
-  has('from spec.md') && has('One script. One model call.') && !has('data-action="field"'));
+check('the read only "from spec.md" block is gone with the rest of build/verify',
+  !has('from spec.md') && !has('specline') && !has('One script. One model call.'));
 for (const key of ['confusions', 'notes', 'sources', 'documents'])
   await fire('click', mk({ action: 'reveal', id: c1, key }));
 check('asking for a block shows it', has('confusions') && has('note-title') && has('one line: what it changed'));
@@ -115,9 +126,15 @@ stub('#edit-box').value = 'notes/tool-schemas.md';
 await fire('click', mk({ action: 'save-resolution', id: conf.id }));
 const conf2 = (await sql(`SELECT * FROM confusions WHERE id='${conf.id}'`))[0];
 check('resolution kept, entry not deleted', conf2.resolved === 1 && conf2.resolution === 'notes/tool-schemas.md');
-check('sessions, queue and parked moved to the side panel',
-  !has('interest queue') && !has('parked registry') && drawer().includes('interest queue') &&
-  drawer().includes('parked registry') && drawer().includes('sessions'));
+check('the interest queue is gone, confusions stay inside the concept',
+  !has('interest queue') && !drawer().includes('interest queue') &&
+  !has('Pick by curiosity') && has('data-action="add-conf"') && has('resolved'));
+check('the parked registry is gone from the interface',
+  !/parked/i.test(dash()) && !/parked/i.test(drawer()) &&
+  !/data-action="(add|del|fire)-parked"/.test(dash() + drawer()));
+check('the drawer is the sessions panel and nothing else',
+  drawer().includes('next session logs as') && drawer().includes('data-action="se-kind"') &&
+  !drawer().includes('panel-head') && !drawer().includes('data-action="toggle-sec"'));
 check('rail is a roadmap > track tree on the left, concepts to its right',
   dash().indexOf('class="rail"') < dash().indexOf('data-key="concepts"') &&
   has('rm-head') && has('data-action="select-track"'));
@@ -529,6 +546,10 @@ await fire('click', mk({ action: 'confirm-reset', id: trk }));
 check('reset unticks the track', (await sql(`SELECT count(*) c FROM phases WHERE track_id='${trk}' AND status='closed'`))[0].c === 0);
 check('reset keeps the work attached to those concepts',
   (await sql("SELECT count(*) c FROM notes WHERE id='n-keep'"))[0].c === 1);
+
+check('the parked table survives in the schema but the app never writes to it',
+  (await sql("SELECT count(*) c FROM parked"))[0].c === 0 &&
+  Object.keys(await (await globalThis.fetch('/api/export')).json()).includes('parked'));
 
 console.log(`\ndashboard bytes: ${dash().length} | leaks: ${/undefined|NaN|\[object Object\]/.test(dash())}`);
 console.log(failures ? `\n${failures} FAILED` : '\nall checks passed');

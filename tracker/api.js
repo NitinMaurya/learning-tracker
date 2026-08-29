@@ -1,7 +1,9 @@
 // Thin client over server.py's SQLite JSON API.
 // Every statement hits the real database file — there is no in-browser copy.
 
-export const TABLES = ['phases', 'breaks', 'claims', 'confusions', 'parked', 'sources', 'sessions'];
+// what the sql console advertises; keep in step with TABLES in server.py
+export const TABLES = ['phases', 'confusions', 'sources', 'sessions', 'notes', 'docs',
+                       'edges', 'roadmaps', 'tracks'];
 
 export const q = (v) =>
   v === null || v === undefined ? 'NULL' : "'" + String(v).replace(/'/g, "''") + "'";

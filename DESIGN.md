@@ -78,7 +78,7 @@ Prose measure caps at 68ch. Data may run wider. All numerals tabular
 - **Hairlines over cards.** A panel is a hairline box on `--surface`. Nested cards are
   banned; a concept opens *inside* its row, it does not spawn a card in a card.
 - **Radius is a rule, not a feeling:** `4px` controls and inputs, `8px` panels, full round
-  only for status dots and the drawer's badge.
+  only for status dots.
 - **Elevation exists twice:** the drawer and the toast. Both carry offset and blur, tinted
   to the ground, never a zero-offset halo.
 - **Spacing scale** 4 / 8 / 12 / 16 / 24 / 32. More space above a heading than below it.

@@ -23,8 +23,8 @@
   <div class="right">
     <span id="status" class="chip">connecting</span>
     <button class="btn" data-action="toggle-drawer" aria-haspopup="dialog"
-            title="sessions, interest queue, parked registry">
-      side panel <span id="panelbadge" class="badge" hidden></span>
+            title="the session log and the timer's next kind">
+      sessions
     </button>
   </div>
 </header>
@@ -38,10 +38,10 @@
 
 <div id="backdrop" class="scrim" data-action="close-drawer" hidden></div>
 
-<aside id="drawer" class="drawer" role="dialog" aria-label="side panel">
+<aside id="drawer" class="drawer" role="dialog" aria-label="sessions">
   <div class="drawer-head">
-    side panel
-    <button class="iconbtn" data-action="close-drawer" title="close (esc)" aria-label="close side panel"></button>
+    sessions
+    <button class="iconbtn" data-action="close-drawer" title="close (esc)" aria-label="close sessions"></button>
   </div>
   <div id="drawer-body"></div>
 </aside>

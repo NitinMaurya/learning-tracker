@@ -26,11 +26,10 @@ it. Offline-capable by construction: a stdlib Python server, a SQLite file, no C
 
 - **Roadmaps** (2) contain **tracks** (13) contain **concepts** (140).
 - A concept is light by default: a name, planned hours, a practical checkpoint.
-- A concept becomes a *unit* when it carries real work: build, verify, break-on-purpose
-  with traces, wall, earned concepts, two exit lists, and its own confusions, notes,
+- A concept becomes a *unit* when it carries real work: its own confusions, notes,
   sources and documents.
-- Around them: a one-hour session timer, a prerequisite graph that sets order and gating,
-  an append-only confusion queue, and a parked registry of topics waiting for a trigger.
+- Around them: a one-hour session timer and a prerequisite graph that sets order and
+  gating. Confusions are append-only and live inside the concept they came from.
 
 ## What success looks like
 
@@ -41,7 +40,7 @@ evening, because the app enforces them rather than reminding.
 ## What must not change
 
 - Data and API contracts: `data-action` names, the SQLite schema, `/api/*`.
-- The spec's rules: no close without both exit lists, sources need their one line, dry
-  work flagged past 90 minutes, confusions append-only, gating by real prerequisites.
+- The spec's rules: sources need their one line, dry work flagged past 90 minutes,
+  confusions append-only, gating by real prerequisites.
 - Keyboard flow: enter submits, escape cancels, the timer survives reload.
 - Offline: no runtime network dependency.

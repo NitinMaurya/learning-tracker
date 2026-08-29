@@ -335,7 +335,7 @@ def init_db():
 
 
 def seed(con):
-    """First run only: load the phases and parked registry from spec.md."""
+    """First run only: load the phases from spec.md."""
     with open(os.path.join(HERE, "seed.json")) as f:
         data = json.load(f)
     con.execute("INSERT INTO roadmaps VALUES ('rm-spec','spec.md',"
@@ -354,8 +354,6 @@ def seed(con):
                 "INSERT INTO breaks VALUES (?,?,?,0,?,NULL)",
                 ("%s-b%d" % (pid, bp), pid, b, bp),
             )
-    for i, (topic, trigger) in enumerate(data["parked"]):
-        con.execute("INSERT INTO parked VALUES (?,?,?,0,NULL)", (uid("parked", i), topic, trigger))
     con.commit()
     print("seeded %s from seed.json" % DB_PATH)
 
@@ -586,8 +584,8 @@ class Handler(SimpleHTTPRequestHandler):
                 con.execute("INSERT INTO tracks VALUES (?,?,?,?,?)", (tid, rid, str(ti + 1), t["title"], ti))
                 for ci, c in enumerate(t["concepts"]):
                     con.execute(
-                        "INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,"
-                        "last_touched,track_id,hours,practical) VALUES (?,?,?,'not started','','','','','',?,NULL,?,?,?)",
+                        "INSERT INTO phases (id,num,name,status,gate,pos,"
+                        "last_touched,track_id,hours,practical) VALUES (?,?,?,'not started','',?,NULL,?,?,?)",
                         ("k-" + uuid.uuid4().hex[:10], c["code"], c["name"], ci, tid, c["hours"], c["practical"]))
             con.commit()
         finally:

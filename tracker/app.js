@@ -9,7 +9,7 @@ const esc = (s) =>
   String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 
-const SECTION_DEFAULTS = { progress: true, concepts: true, log: true, queue: true, parked: false };
+const SECTION_DEFAULTS = { concepts: true };
 
 // Storage keys were prefixed ai-lab- before the rename; carry them over once so a
 // running timer, the open roadmaps and the selected track survive the change.
@@ -184,14 +184,11 @@ function blockedBy(phases, i) {
 /* ---------- dashboard ---------- */
 
 async function renderDashboard() {
-  const [phases, sessions, parked] = await Promise.all([
+  const [phases, sessions] = await Promise.all([
     model(),
     all('SELECT * FROM sessions ORDER BY on_date DESC, rowid DESC'),
-    all('SELECT * FROM parked ORDER BY fired DESC, topic'),
   ]);
 
-  const openConf = phases.confusions.filter((c) => !c.resolved).length;
-  const firedParked = parked.filter((p) => p.fired).length;
   const current = phases.find((p) => p.status === 'walled') || phases.find((p) => p.status === 'building');
 
   let track = phases.tracks.find((t) => t.id === state.track);
@@ -255,14 +252,9 @@ async function renderDashboard() {
 
   if (state.view === 'graph') mountGraph($('#graph'), inTrack, trackEdges, GRAPH_CTX);
 
-  $('#drawer-body').innerHTML = `
-    ${panel('log', 'sessions', null, sessionForm(sessions))}
-    ${panel('queue', 'interest queue', `${openConf} open`, queueHtml(phases))}
-    ${panel('parked', 'parked registry', `${firedParked}/${parked.length}`, parkedHtml(parked))}`;
+  // The drawer holds one thing, so it needs no collapsible panel around it.
+  $('#drawer-body').innerHTML = sessionForm(sessions);
 
-  const badge = $('#panelbadge');
-  badge.hidden = !openConf;
-  badge.textContent = openConf;
   $('#drawer').classList.toggle('open', state.drawer);
   $('#backdrop').hidden = !state.drawer;
 }
@@ -418,10 +410,6 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
 
       const shows = (key, hasContent) => hasContent || state.reveal[`${p.id}:${key}`];
       const hasGate = p.gate && p.gate.trim() && p.gate.trim() !== 'none';
-      // build / verify / wall / earned were transcribed from spec.md for its own units.
-      // The machinery is gone; the prose is still worth reading.
-      const spec = [['build', p.build], ['verify', p.verify_txt], ['wall', p.wall], ['earned concepts', p.earned]]
-        .filter(([, v]) => v && v.trim());
 
       const optional = [
         ['confusions', p.confusions.length, 'confusion'],
@@ -443,11 +431,6 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
             ? `<div class="field"><div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
             : ''}
           ${hasGate ? `<div class="field"><label>gate</label><div class="ro">${esc(p.gate)}</div></div>` : ''}
-          ${spec.length
-            ? `<div class="field"><label>from spec.md</label>
-                ${spec.map(([k, v]) => `<div class="ro specline"><b>${esc(k)}</b>${esc(v)}</div>`).join('')}
-              </div>`
-            : ''}
 
           ${shows('confusions', p.confusions.length) ? confusionsBlock(p) : ''}
           ${shows('notes', p.notes.length) ? notesBlock(p, allPhases) : ''}
@@ -644,52 +627,6 @@ function docsBlock(p) {
   </div>`;
 }
 
-/* ---------- interest queue ---------- */
-
-function queueHtml(phases) {
-  const open = phases.confusions.filter((c) => !c.resolved);
-  const byNum = new Map(phases.map((p) => [p.num, p]));
-  return `<ul class="list">
-      ${open
-        .map((c) => {
-          const p = byNum.get(c.phase_num);
-          return `<li ${p ? `data-action="open-phase" data-id="${p.id}" role="button" tabindex="0" style="cursor:pointer"` : ''}>
-            <span class="txt">
-              <span class="main">${esc(c.text)}</span>
-              <span class="sub">${p ? `${esc(p.num)} ${esc(p.name)} · ` : 'unfiled · '}${esc(relDay((c.created_at || '').slice(0, 10)))}</span>
-            </span>
-          </li>`;
-        })
-        .join('') || '<li class="empty">Nothing open. Confusions logged inside a concept surface here.</li>'}
-    </ul>
-    <p class="note" style="margin-top:10px">Every open confusion, across concepts. Pick by curiosity, not order. Entries that keep resurfacing are where depth is owed.</p>`;
-}
-
-/* ---------- parked ---------- */
-
-function parkedHtml(rows) {
-  return `<ul class="list">
-      ${rows
-        .map(
-          (r) => `<li class="${r.fired ? 'done' : ''}">
-            <input type="checkbox" data-action="fire-parked" data-id="${r.id}" ${r.fired ? 'checked' : ''} aria-label="trigger fired" />
-            <span class="txt">
-              <span class="main">${esc(r.topic)}</span>
-              <span class="sub">${r.fired ? `fired ${esc(r.fired_at || '')}, write it up as a concept` : esc(r.trigger_text)}</span>
-            </span>
-            <button class="iconbtn danger" data-action="del-parked" data-id="${r.id}" title="delete" aria-label="delete">${icon('close')}</button>
-          </li>`
-        )
-        .join('')}
-    </ul>
-    <div class="row wrap" style="margin-top:12px">
-      <input type="text" id="pk-topic" placeholder="topic" class="grow" aria-label="parked topic" />
-      <input type="text" id="pk-trigger" placeholder="trigger" class="grow" aria-label="trigger" />
-      <button class="btn" data-action="add-parked">park</button>
-    </div>
-    <p class="note" style="margin-top:10px">Parked is not skipped. Tick only when the trigger has actually fired. Reading this list for interest is the failure mode it exists to prevent.</p>`;
-}
-
 /* ---------- sessions ---------- */
 
 function sessionForm(sessions) {
@@ -727,22 +664,18 @@ function sessionForm(sessions) {
 /* ---------- sql tab ---------- */
 
 const SAMPLES = {
-  'concept progress': `SELECT p.num, p.name, p.status,
-       count(*) FILTER (WHERE b.done) AS broken,
-       count(b.id) AS breaks
-FROM concepts p LEFT JOIN breaks b ON b.phase_id = p.id
-GROUP BY 1,2,3 ORDER BY 1;`,
+  'concept progress': `SELECT t.title AS track, p.num, p.name, p.status, p.hours, p.last_touched
+FROM concepts p LEFT JOIN tracks t ON t.id = p.track_id
+ORDER BY t.pos, p.pos;`,
   'open confusions': `SELECT date(created_at) AS day, phase_num AS concept, text
 FROM confusions WHERE resolved = 0
 ORDER BY created_at DESC;`,
   'time per week': `SELECT strftime('%Y-W%W', on_date) AS week, kind,
        sum(minutes) AS minutes, count(*) AS sessions
 FROM sessions GROUP BY 1,2 ORDER BY 1 DESC, 3 DESC;`,
-  'honest exits': `SELECT p.num, p.status,
-       sum(c.kind = 'can') AS can_explain,
-       sum(c.kind = 'cannot') AS cannot_explain
-FROM concepts p LEFT JOIN claims c ON c.phase_id = p.id
-GROUP BY 1,2 ORDER BY 1;`,
+  'time per concept': `SELECT s.phase_num AS concept, count(*) AS sessions, sum(s.minutes) AS minutes
+FROM sessions s WHERE s.phase_num IS NOT NULL
+GROUP BY 1 ORDER BY 3 DESC;`,
   'notes by concept': `SELECT p.num, n.title, n.updated_at
 FROM notes n JOIN concepts p ON instr(n.phase_ids, p.id) > 0
 ORDER BY p.num, n.updated_at DESC;`,
@@ -1047,8 +980,8 @@ document.addEventListener('click', async (e) => {
       const name = $('#np-name').value.trim();
       if (!num || !name) return toast('num and name required');
       const pos = (((await all(`SELECT max(pos) AS m FROM phases WHERE track_id = ${q(state.track)}`))[0].m) ?? -1) + 1;
-      await run(`INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,last_touched,track_id)
-        VALUES (${q(uid())}, ${q(num)}, ${q(name)}, 'not started', '', '', '', '', '', ${pos}, NULL, ${q(state.track)})`);
+      await run(`INSERT INTO phases (id,num,name,status,gate,pos,last_touched,track_id)
+        VALUES (${q(uid())}, ${q(num)}, ${q(name)}, 'not started', '', ${pos}, NULL, ${q(state.track)})`);
       state.newPhase = false;
       return after('concept added');
     }
@@ -1120,21 +1053,6 @@ document.addEventListener('click', async (e) => {
       if (!confirm('Delete this file from tracker/files/ as well?')) return;
       await deleteDoc(id);
       return after('deleted');
-
-    /* parked */
-    case 'fire-parked':
-      await run(`UPDATE parked SET fired = ${el.checked ? 1 : 0}, fired_at = ${el.checked ? q(today()) : 'NULL'} WHERE id = ${q(id)}`);
-      return after(el.checked ? 'trigger fired, it graduates into a concept now' : '');
-    case 'add-parked': {
-      const t = $('#pk-topic').value.trim();
-      const g = $('#pk-trigger').value.trim();
-      if (!t || !g) return toast('topic and trigger both required');
-      await run(`INSERT INTO parked VALUES (${q(uid())}, ${q(t)}, ${q(g)}, 0, NULL)`);
-      return after('parked');
-    }
-    case 'del-parked':
-      await run(`DELETE FROM parked WHERE id = ${q(id)}`);
-      return after();
 
     /* sessions */
     case 'se-kind':
@@ -1310,7 +1228,6 @@ document.addEventListener('keydown', async (e) => {
     return after('roadmap added');
   }
   if (el.dataset.action === 'add-track') return document.querySelector('[data-action="add-track"]')?.click();
-  if (el.id === 'pk-topic' || el.id === 'pk-trigger') return document.querySelector('[data-action="add-parked"]').click();
   if (el.id === 'np-num' || el.id === 'np-name') return document.querySelector('[data-action="add-phase"]').click();
 });
 
