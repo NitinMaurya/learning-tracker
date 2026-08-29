@@ -8,7 +8,6 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-const STATUSES = ['not started', 'building', 'walled', 'closed'];
 
 const SECTION_DEFAULTS = { progress: true, concepts: true, log: true, queue: true, parked: false };
 
@@ -142,10 +141,8 @@ const meter = (done, total) => {
 /* ---------- data ---------- */
 
 async function model() {
-  const [phases, breaks, claims, sources, notes, docs, confusions, edges, roadmaps, tracks] = await Promise.all([
+  const [phases, sources, notes, docs, confusions, edges, roadmaps, tracks] = await Promise.all([
     all('SELECT * FROM phases ORDER BY pos'),
-    all('SELECT * FROM breaks ORDER BY pos'),
-    all('SELECT * FROM claims ORDER BY created_at'),
     all('SELECT * FROM sources ORDER BY created_at DESC'),
     all('SELECT * FROM notes ORDER BY updated_at DESC'),
     all('SELECT * FROM docs ORDER BY created_at DESC'),
@@ -155,9 +152,6 @@ async function model() {
     all('SELECT * FROM tracks ORDER BY pos'),
   ]);
   for (const p of phases) {
-    p.breaks = breaks.filter((b) => b.phase_id === p.id);
-    p.can = claims.filter((c) => c.phase_id === p.id && c.kind === 'can');
-    p.cannot = claims.filter((c) => c.phase_id === p.id && c.kind === 'cannot');
     p.sources = sources.filter((s) => s.phase_id === p.id);
     p.notes = notes.filter((n) => (n.phase_ids || '').split(',').includes(p.id));
     p.docs = docs.filter((d) => d.phase_id === p.id);
@@ -185,13 +179,6 @@ function blockedBy(phases, i) {
   }
   return i === 0 || phases[i - 1].status === 'closed' ? null : phases[i - 1].num;
 }
-
-const canClose = (p) => p.can.length > 0 && p.cannot.length > 0;
-
-// A concept only has to satisfy the spec's exit rule once it is something you built.
-const isUnit = (p) =>
-  !!(p.build || p.wall || p.breaks.length || p.can.length || p.cannot.length ||
-     p.notes.length || p.docs.length || p.sources.length || p.confusions.length);
 
 /* ---------- dashboard ---------- */
 
@@ -340,8 +327,6 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
     .map((p, i) => {
       const blocked = blockedBy(phases, i);
       const open = state.open === p.id;
-      const unit = isUnit(p);
-      const done = p.breaks.filter((b) => b.done).length;
       const openConf = p.confusions.filter((c) => !c.resolved).length;
       const running = timer && timer.id === p.id;
 
@@ -356,8 +341,12 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
         <span class="right">
           ${running ? `<span class="status building"><span class="glyph"></span><span id="timer-count">${clock(remainingMs())}</span></span>` : ''}
           ${blocked && p.status !== 'closed' ? `<span class="status gated" title="gated: ${esc(blocked)} is not closed" aria-label="gated: ${esc(blocked)} is not closed">${icon('wall', { size: 13 })}</span>` : ''}
-          ${unit ? `<span class="counts">${done}/${p.breaks.length} broken · ${p.can.length}/${p.cannot.length} exit${openConf ? ` · <span class="warn">${openConf} open</span>` : ''}</span>` : ''}
-          ${unit || p.status !== 'not started' ? statusHtml(p.status) : ''}
+          ${openConf || p.notes.length || p.docs.length
+            ? `<span class="counts">${[openConf ? `<span class="warn">${openConf} open</span>` : '',
+                p.notes.length ? `${p.notes.length} notes` : '',
+                p.docs.length ? `${p.docs.length} files` : ''].filter(Boolean).join(' · ')}</span>`
+            : ''}
+          ${p.status !== 'not started' ? statusHtml(p.status) : ''}
           <a class="btn quiet yt" href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery(p, track))}"
              target="_blank" rel="noreferrer" data-action="lookup"
              title="youtube: ${esc(searchQuery(p, track))}">${icon('video')} youtube</a>
@@ -367,8 +356,11 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
       if (!open) return `<article class="concept ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}</article>`;
 
       const shows = (key, hasContent) => hasContent || state.reveal[`${p.id}:${key}`];
-      const unitOpen = unit || state.reveal[`${p.id}:build`];
       const hasGate = p.gate && p.gate.trim() && p.gate.trim() !== 'none';
+      // build / verify / wall / earned were transcribed from spec.md for its own units.
+      // The machinery is gone; the prose is still worth reading.
+      const spec = [['build', p.build], ['verify', p.verify_txt], ['wall', p.wall], ['earned concepts', p.earned]]
+        .filter(([, v]) => v && v.trim());
 
       const optional = [
         ['confusions', p.confusions.length, 'confusion'],
@@ -376,11 +368,8 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
         ['sources', p.sources.length, 'link'],
         ['documents', p.docs.length, 'file'],
       ];
-      // A block that holds something stays. One you opened by mistake can be put away.
-      const toggles = [
-        ...(unit ? [] : [['build', !!state.reveal[`${p.id}:build`], 'build']]),
-        ...optional.filter(([, n]) => !n).map(([key, , word]) => [key, !!state.reveal[`${p.id}:${key}`], word]),
-      ];
+      const toggles = optional.filter(([, n]) => !n)
+        .map(([key, , word]) => [key, !!state.reveal[`${p.id}:${key}`], word]);
 
       return `<article class="concept open ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}
         <div class="cbody">
@@ -394,8 +383,12 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
                 <div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
             : ''}
           ${hasGate ? `<div class="field"><label>gate</label><div class="ro">${esc(p.gate)}</div></div>` : ''}
+          ${spec.length
+            ? `<div class="field"><label>from spec.md</label>
+                ${spec.map(([k, v]) => `<div class="ro specline"><b>${esc(k)}</b>${esc(v)}</div>`).join('')}
+              </div>`
+            : ''}
 
-          ${unitOpen ? unitFields(p) : ''}
           ${shows('confusions', p.confusions.length) ? confusionsBlock(p) : ''}
           ${shows('notes', p.notes.length) ? notesBlock(p, allPhases) : ''}
           ${shows('sources', p.sources.length) ? sourcesBlock(p) : ''}
@@ -408,11 +401,7 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
                   `<button class="btn ${on ? '' : 'quiet'}" aria-pressed="${on}"
                      data-action="${on ? 'unreveal' : 'reveal'}" data-id="${p.id}" data-key="${key}"
                      title="${on ? 'put this away again' : ''}">${on ? icon('close') : icon('plus')} ${word}</button>`).join('')}
-              </div>
-              ${!unitOpen
-                ? `<p class="note" style="margin-top:8px">This one is a checkbox: tick it when you can explain it and did the checkpoint.
-                   Adding a build turns it into a unit, and the exit rule starts applying.</p>`
-                : ''}`
+              </div>`
             : ''}
         </div>
       </article>`;
@@ -435,50 +424,6 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
     : '<p class="empty" style="padding:16px">No concepts in this track yet. Add one, or pick another track.</p>';
 }
 
-function unitFields(p) {
-  const done = p.breaks.filter((b) => b.done).length;
-  return `
-    ${['build', 'verify_txt', 'wall', 'earned']
-      .map(
-        (f) => `<div class="field">
-          <label>${f === 'verify_txt' ? 'verify' : f === 'earned' ? 'earned concepts' : f}</label>
-          <textarea data-action="field" data-id="${p.id}" data-field="${f}"
-            placeholder="${f === 'wall' ? 'the failure you expect to hit and not be able to explain' : ''}">${esc(p[f])}</textarea>
-        </div>`
-      )
-      .join('')}
-
-    <div class="field">
-      <label>break on purpose</label>
-      <ul class="list">
-        ${p.breaks.map((b) => breakItem(b, p.id)).join('') ||
-          '<li class="empty">Name the failures you intend to cause. If nothing broke, the build was too easy.</li>'}
-      </ul>
-      <input type="text" placeholder="add a failure to induce" data-action="add-break" data-id="${p.id}"
-        aria-label="add a failure to induce" style="margin-top:8px" />
-    </div>
-
-    <div class="two">
-      <div class="field">
-        <label>${icon('check', { size: 13 })} can explain without notes</label>
-        <ul class="list">${p.can.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
-        <input type="text" placeholder="add a claim" data-action="add-claim" data-kind="can" data-id="${p.id}"
-          aria-label="add a claim you can explain" style="margin-top:8px" />
-      </div>
-      <div class="field">
-        <label>${icon('close', { size: 13 })} still can't explain</label>
-        <ul class="list">${p.cannot.map(claimItem).join('') || '<li class="empty">empty</li>'}</ul>
-        <input type="text" placeholder="add a gap, also filed as a confusion" data-action="add-claim" data-kind="cannot" data-id="${p.id}"
-          aria-label="add a gap" style="margin-top:8px" />
-      </div>
-    </div>
-
-    ${!canClose(p) && p.status !== 'closed' && (p.breaks.length || p.build)
-      ? `<p class="note">Closes only when <em>both</em> exit lists have entries. An empty "still can't explain" means you weren't honest, not that you're done.</p>`
-      : ''}
-    <span hidden>${done}</span>`;
-}
-
 function timerPanel() {
   const left = remainingMs();
   return `<div class="timer">
@@ -490,35 +435,6 @@ function timerPanel() {
       aria-label="session note" />
   </div>`;
 }
-
-function breakItem(b, phaseId) {
-  if (state.edit?.kind === 'trace' && state.edit.id === b.id) {
-    return `<li><div class="grow">
-      <div class="note" style="margin-bottom:6px">${esc(b.label)}</div>
-      <textarea id="edit-box" placeholder="what actually broke, pasted from the run">${esc(b.trace)}</textarea>
-      <div class="row" style="margin-top:8px">
-        <button class="btn primary" data-action="save-trace" data-id="${b.id}" data-phase="${phaseId}">save</button>
-        <button class="btn" data-action="cancel-edit">cancel</button>
-      </div>
-    </div></li>`;
-  }
-  return `<li class="${b.done ? 'done' : ''}">
-    <input type="checkbox" data-action="break" data-id="${b.id}" data-phase="${phaseId}" ${b.done ? 'checked' : ''}
-      aria-label="induced" />
-    <span class="txt">
-      <span class="main">${esc(b.label)}</span>
-      ${b.trace ? `<span class="sub">${esc(b.trace)}</span>` : ''}
-    </span>
-    <button class="iconbtn" data-action="edit-trace" data-id="${b.id}"
-      title="${b.trace ? 'edit trace' : 'attach trace'}" aria-label="trace">${icon('edit')}</button>
-    <button class="iconbtn danger" data-action="del-break" data-id="${b.id}" title="delete" aria-label="delete">${icon('close')}</button>
-  </li>`;
-}
-
-const claimItem = (c) => `<li>
-  <span class="txt"><span class="main">${esc(c.text)}</span></span>
-  <button class="iconbtn danger" data-action="del-claim" data-id="${c.id}" title="delete" aria-label="delete">${icon('close')}</button>
-</li>`;
 
 /* ---------- confusions (per concept) ---------- */
 
@@ -945,11 +861,6 @@ document.addEventListener('click', async (e) => {
       localStorage.setItem('lt-collapsed', JSON.stringify(state.collapsed));
       return render();
     case 'done': {
-      const p = (await model()).find((x) => x.id === id);
-      if (el.checked && isUnit(p) && !canClose(p)) {
-        el.checked = false;
-        return toast("can't close, both exit lists need entries");
-      }
       await run(`UPDATE phases SET status = ${el.checked ? "'closed'" : "'not started'"},
         last_touched = ${q(today())} WHERE id = ${q(id)}`);
       return after('');
@@ -1017,29 +928,9 @@ document.addEventListener('click', async (e) => {
       e.preventDefault();
       return stopTimer(false);
 
-    /* breaks */
-    case 'break':
-      await run(`UPDATE breaks SET done = ${el.checked ? 1 : 0} WHERE id = ${q(id)}`);
-      await touch(el.dataset.phase);
-      return after(el.checked ? 'broken, write the trace down' : '');
-    case 'edit-trace':
-      state.edit = { kind: 'trace', id };
-      return render();
-    case 'save-trace':
-      await run(`UPDATE breaks SET trace = ${q($('#edit-box').value.trim())} WHERE id = ${q(id)}`);
-      await touch(el.dataset.phase);
-      state.edit = null;
-      return after('trace saved');
-    case 'del-break':
-      await run(`DELETE FROM breaks WHERE id = ${q(id)}`);
-      return after();
     case 'cancel-edit':
       state.edit = null;
       return render();
-    case 'del-claim':
-      await run(`DELETE FROM claims WHERE id = ${q(id)}`);
-      return after();
-
     /* concepts */
     case 'new-phase-form':
       state.newPhase = true;
@@ -1190,42 +1081,7 @@ async function uploadFiles(files, phaseId) {
 
 document.addEventListener('change', async (e) => {
   const el = e.target.closest('[data-action]');
-  if (!el) return;
-
-  if (el.dataset.action === 'upload') return uploadFiles([...el.files], el.dataset.id);
-
-  if (el.dataset.action === 'field') {
-    await run(`UPDATE phases SET ${el.dataset.field} = ${q(el.value)} WHERE id = ${q(el.dataset.id)}`);
-    await touch(el.dataset.id);
-    // writing a wall is the evidence that you hit one; nothing to set by hand
-    if (el.dataset.field === 'wall') {
-      const p = (await all(`SELECT status, wall FROM phases WHERE id = ${q(el.dataset.id)}`))[0];
-      const want = p.wall && p.wall.trim() ? 'walled' : 'building';
-      if (p.status !== 'closed' && p.status !== want && (p.status === 'walled' || want === 'walled')) {
-        await run(`UPDATE phases SET status = ${q(want)} WHERE id = ${q(el.dataset.id)}`);
-        await render();
-        return toast(want === 'walled' ? 'walled: now read the earned concepts' : 'saved');
-      }
-    }
-    return toast('saved');
-  }
-
-  if (el.dataset.action === 'status') {
-    const phases = await model();
-    const i = phases.findIndex((p) => p.id === el.dataset.id);
-    const p = phases[i];
-    if (el.value === 'closed' && !canClose(p)) {
-      el.value = p.status;
-      return toast("can't close, both exit lists need entries");
-    }
-    const blocked = blockedBy(phases, i);
-    if (el.value !== 'not started' && blocked && !confirm(`Gate not paid. ${blocked} is not closed. Continue anyway?`)) {
-      el.value = p.status;
-      return;
-    }
-    await run(`UPDATE phases SET status = ${q(el.value)}, last_touched = ${q(today())} WHERE id = ${q(el.dataset.id)}`);
-    return after('');
-  }
+  if (el?.dataset.action === 'upload') return uploadFiles([...el.files], el.dataset.id);
 });
 
 /* ---------- drag: reorder concepts, and file drops ---------- */
@@ -1319,23 +1175,6 @@ document.addEventListener('keydown', async (e) => {
   const v = el.value.trim();
   e.preventDefault();
 
-  if (a === 'add-break' && v) {
-    const pos = (((await all(`SELECT max(pos) AS m FROM breaks WHERE phase_id = ${q(el.dataset.id)}`))[0].m) ?? -1) + 1;
-    await run(`INSERT INTO breaks VALUES (${q(uid())}, ${q(el.dataset.id)}, ${q(v)}, 0, ${pos}, NULL)`);
-    await touch(el.dataset.id);
-    return after();
-  }
-  if (a === 'add-claim' && v) {
-    const kind = el.dataset.kind;
-    await run(`INSERT INTO claims VALUES (${q(uid())}, ${q(el.dataset.id)}, ${q(kind)}, ${q(v)}, ${q(now())})`);
-    if (kind === 'cannot') {
-      // §3: a gap is logged as a confusion too
-      const p = (await all(`SELECT num FROM phases WHERE id = ${q(el.dataset.id)}`))[0];
-      await run(`INSERT INTO confusions VALUES (${q(uid())}, ${q(v)}, ${q(p?.num || null)}, ${q(now())}, 0, NULL)`);
-    }
-    await touch(el.dataset.id);
-    return after(kind === 'cannot' ? 'gap logged as a confusion too' : '');
-  }
   if (a === 'add-conf' && v) {
     await run(`INSERT INTO confusions VALUES (${q(uid())}, ${q(v)}, ${q(el.dataset.num)}, ${q(now())}, 0, NULL)`);
     await touch(el.dataset.id);

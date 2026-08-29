@@ -95,21 +95,16 @@ check('manual session form removed', !has('data-action="add-session"') && !has('
 
 // expand
 await fire('click', mk({ action: 'toggle-phase', id: c1 }));
-check('a unit opens with its spine', has('break on purpose') && has('can explain without notes') && has('still can\'t explain'));
 check('empty blocks wait behind an add bar instead of filling the page',
   has('addbar') && !has('A note is a claim') && !has('Read only what the wall entitles'));
+check('no build machinery anywhere', !dash().includes('break on purpose') &&
+  !dash().includes('data-action="add-claim"') && !dash().includes('data-key="build"'));
+check('spec.md prose is still shown, read only',
+  has('from spec.md') && has('One script. One model call.') && !has('data-action="field"'));
 for (const key of ['confusions', 'notes', 'sources', 'documents'])
   await fire('click', mk({ action: 'reveal', id: c1, key }));
 check('asking for a block shows it', has('confusions') && has('A note is a claim') && has('one line: what it changed'));
 check('the sources block is named for links too', has('sources and links'));
-
-// breaks + trace
-const b1 = (await sql(`SELECT id FROM breaks WHERE phase_id='${c1}' ORDER BY pos`))[0].id;
-await fire('click', mk({ action: 'break', id: b1, phase: c1 }, { checked: true }));
-await fire('click', mk({ action: 'edit-trace', id: b1 }));
-stub('#edit-box').value = 'ValidationError: city';
-await fire('click', mk({ action: 'save-trace', id: b1, phase: c1 }));
-check('break + trace persist', (await sql(`SELECT done, trace FROM breaks WHERE id='${b1}'`))[0].trace === 'ValidationError: city');
 
 // confusions now live inside the concept
 await fire('keydown', input({ action: 'add-conf', id: c1, num: '01' }, 'why does the retry loop not converge'));
@@ -187,15 +182,6 @@ const sess = (await sql('SELECT * FROM sessions'))[0];
 check('stopping logs a session automatically', sess && sess.phase_num === '01' && sess.note === 'wired the first tool call' && sess.minutes >= 1);
 check('timer cleared after stop', !store['lt-timer']);
 
-// exit lists + close rule
-await fire('keydown', input({ action: 'add-claim', kind: 'can', id: c1 }, 'the schema is a contract'));
-await fire('keydown', input({ action: 'add-claim', kind: 'cannot', id: c1 }, 'why validation retries loop'));
-check('cannot-claim also files a confusion', (await sql("SELECT count(*) c FROM confusions WHERE text='why validation retries loop'"))[0].c === 1);
-await fire('click', mk({ action: 'done', id: c2 }, { checked: true }));
-check('close refused with empty exit lists', (await sql(`SELECT status FROM concepts WHERE id='${c2}'`))[0].status === 'not started');
-await fire('click', mk({ action: 'done', id: c1 }, { checked: true }));
-check('close allowed once both lists filled', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'closed');
-
 // drag to reorder
 const before = (await sql('SELECT num FROM concepts ORDER BY pos')).map((r) => r.num).join(',');
 const handle = { dataset: { drag: c1 }, closest: (s) => (s === '[data-drag]' ? handle : { classList: { add() {}, remove() {} } }) };
@@ -210,6 +196,12 @@ await fire('drop', dropTarget, { clientY: 100, dataTransfer: { types: [], files:
 const after = (await sql('SELECT num FROM concepts ORDER BY pos')).map((r) => r.num).join(',');
 check(`drag reorder moved 01 after 02 (${before} → ${after})`, after.startsWith('02,01'));
 
+// closing is now just the checkbox: no exit lists to satisfy
+await fire('click', mk({ action: 'done', id: c1 }, { checked: true }));
+check('the checkbox closes a concept outright', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'closed');
+await fire('click', mk({ action: 'done', id: c1 }, { checked: false }));
+check('unticking reopens it', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'not started');
+
 // ---- hierarchy: roadmaps > tracks > concepts ----
 await sql("INSERT INTO roadmaps VALUES ('rm-2','Imported roadmap','',1)");
 await sql("INSERT INTO tracks VALUES ('tr-2','rm-2','5','Inference & GPU',0)");
@@ -217,7 +209,6 @@ await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,ear
   + " VALUES ('k-I3','I3','KV cache mechanics','not started','','','','','',0,'tr-2',3.0,'compute the cache for a 7B model')");
 await fire('click', mk({ action: 'select-track', id: 'tr-2' }));
 check('selecting a track swaps the concepts column', has('KV cache mechanics') && !has('tool-calling'));
-check('a light concept shows hours and no unit counts', has('3h') && !/KV cache[\s\S]{0,400}broken/.test(dash()));
 await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));
 check('opening a light concept shows its practical checkpoint',
   has('practical checkpoint') && has('compute the cache for a 7B model'));
@@ -234,11 +225,7 @@ check('a short name borrows its track for context', await (async () => {
   await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));   // leave the fixture as we found it
   return ok;
 })());
-check('a light concept opens without the unit spine',
-  !/KV cache[\s\S]*?break on purpose/.test(dash()) && has('data-key="build"') && has('This one is a checkbox'));
 check('a light concept hides an empty gate', !/KV cache[\s\S]{0,600}>gate</.test(dash()));
-await fire('click', mk({ action: 'reveal', id: 'k-I3', key: 'build' }));
-check('adding a build turns it into a unit', has('break on purpose'));
 await fire('click', mk({ action: 'unreveal', id: 'k-I3', key: 'build' }));
 check('a mistaken click can be put away again', !/KV cache[\s\S]*?break on purpose/.test(dash()));
 await fire('click', mk({ action: 'reveal', id: 'k-I3', key: 'notes' }));
@@ -246,16 +233,6 @@ check('an opened empty block offers to close itself', /data-action="unreveal"[^>
 await fire('click', mk({ action: 'done', id: 'k-I3' }, { checked: true }));
 check('ticking a light concept closes it without the exit-list rule',
   (await sql("SELECT status FROM phases WHERE id='k-I3'"))[0].status === 'closed');
-const guard = mk({ action: 'done', id: c2 }, { checked: true });
-await fire('click', guard);
-check('a concept with real work still needs both exit lists to close',
-  (await sql(`SELECT status FROM phases WHERE id='${c2}'`))[0].status !== 'closed');
-// hitting a wall is recorded by writing one, not by picking a status
-await fire('change', { closest: () => ({ dataset: { action: 'field', id: c2, field: 'wall' }, value: 'cannot explain the retry storm' }),
-                       target: { dataset: { action: 'field', id: c2, field: 'wall' }, value: 'cannot explain the retry storm',
-                                 closest(s) { return this; } } });
-check('writing a wall marks the concept walled',
-  (await sql(`SELECT status FROM phases WHERE id='${c2}'`))[0].status === 'walled');
 check('graph is scoped to the selected track',
   (await (async () => { await fire('click', mk({ action: 'set-view', view: 'graph' }));
     const only = has('KV cache') && !has('tool-calling'); 

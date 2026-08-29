@@ -82,14 +82,14 @@ export function graphHtml(phases, edges) {
   const nodeSvg = phases
     .map((p) => {
       const { x, y } = pos.get(p.id);
-      const done = p.breaks.filter((b) => b.done).length;
+
       return `<g class="gnode ${p.status.replace(' ', '-')}" data-node="${p.id}" transform="translate(${x},${y})">
         <rect class="gbox" width="${NODE_W}" height="${NODE_H}" rx="10" />
         <circle class="gorder" cx="0" cy="0" r="11" />
         <text class="gordertext" x="0" y="4" text-anchor="middle">${rank.get(p.id) ?? '?'}</text>
         <text class="gnum" x="14" y="24">${esc(p.num)}</text>
         <text class="gname" x="36" y="24">${esc(p.name.slice(0, 20))}</text>
-        <text class="gmeta" x="14" y="44">${esc(p.status)} · ${done}/${p.breaks.length} broken</text>
+        <text class="gmeta" x="14" y="44">${esc(p.status)}${p.hours ? ` · ${p.hours}h` : ''}</text>
         <circle class="port" cx="${NODE_W / 2}" cy="${NODE_H}" r="7">
           <title>drag down to a concept this one unlocks</title>
         </circle>

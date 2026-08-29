@@ -350,6 +350,15 @@ class Handler(SimpleHTTPRequestHandler):
                 data[table] = [dict(r) for r in con.execute(
                     "SELECT * FROM %s WHERE phase_num IN (%s)" % (table, nq), nums)]
 
+        # an append-only record of every destructive call, kept even if the
+        # snapshot files are cleaned up
+        os.makedirs(TRASH, exist_ok=True)
+        with open(os.path.join(TRASH, "deletes.log"), "a") as log:
+            log.write("%s  delete-roadmap  id=%s name=%r tracks=%d concepts=%d client=%s\n" % (
+                datetime.datetime.now().isoformat(timespec="seconds"), rid,
+                (data["roadmap"][0]["name"] if data["roadmap"] else "?"),
+                len(tracks), len(concepts), self.headers.get("User-Agent", "?")[:60]))
+
         name = re.sub(r"[^A-Za-z0-9._-]", "-", (data["roadmap"][0]["name"] if data["roadmap"] else rid))[:60]
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         os.makedirs(TRASH, exist_ok=True)
