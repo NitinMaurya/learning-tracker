@@ -1,6 +1,6 @@
 ---
 version: 1
-name: ai-lab-instrument
+name: learning-tracker-instrument
 description: >
   A dark instrument for a single engineer's workbench. Near-black warm neutrals, hairlines
   instead of cards, one ochre accent that means "now" and nothing else. Sans carries prose,

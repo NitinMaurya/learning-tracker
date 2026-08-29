@@ -164,14 +164,14 @@ check('document listed in the concept', has('trace.log'));
 
 // session timer
 await fire('click', mk({ action: 'start-timer', id: c1 }));
-check('timer starts and shows a countdown', has('timer-count') && !!JSON.parse(store['ai-lab-timer'] || 'null'));
+check('timer starts and shows a countdown', has('timer-count') && !!JSON.parse(store['lt-timer'] || 'null'));
 check('starting a session moves the concept to building', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'building');
 check('rail marks the track holding live work', /class="live"/.test(dash()));
 stub('#timer-note').value = 'wired the first tool call';
 await fire('click', mk({ action: 'stop-timer' }));
 const sess = (await sql('SELECT * FROM sessions'))[0];
 check('stopping logs a session automatically', sess && sess.phase_num === '01' && sess.note === 'wired the first tool call' && sess.minutes >= 1);
-check('timer cleared after stop', !store['ai-lab-timer']);
+check('timer cleared after stop', !store['lt-timer']);
 
 // exit lists + close rule
 await fire('keydown', input({ action: 'add-claim', kind: 'can', id: c1 }, 'the schema is a contract'));
@@ -328,7 +328,7 @@ check('the roadmap delete control can actually appear', await (async () => {
 })());
 check('the drawer close button gets a glyph', (nodes['#drawer .drawer-head .iconbtn']?.innerHTML || '').includes('<svg'));
 check('delete asks first, naming what goes',
-  dash().includes('rm-confirm') && dash().includes('Doomed') && dash().includes('cannot be undone'));
+  dash().includes('rm-confirm') && dash().includes('Doomed') && dash().includes('tracker/trash/'));
 await fire('click', mk({ action: 'cancel-del-roadmap' }));
 check('cancel leaves the roadmap alone', (await sql("SELECT count(*) c FROM roadmaps WHERE id='rm-x'"))[0].c === 1);
 
@@ -347,6 +347,17 @@ check('everything attached to those concepts goes with them',
   await gone("SELECT count(*) c FROM docs WHERE phase_id='k-x1'") &&
   await gone("SELECT count(*) c FROM confusions WHERE id='cf-x1'") &&
   await gone("SELECT count(*) c FROM sessions WHERE id='se-x1'"));
+check('a snapshot is written before anything is deleted', await (async () => {
+  const fs = await import('node:fs'); const path = await import('node:path');
+  const dir = path.join(path.dirname(new URL(import.meta.url).pathname), 'trash');
+  if (!fs.existsSync(dir)) return false;
+  const newest = fs.readdirSync(dir).filter((f) => f.includes('Doomed')).sort().pop();
+  if (!newest) return false;
+  const snap = JSON.parse(fs.readFileSync(path.join(dir, newest), 'utf8'));
+  fs.rmSync(path.join(dir, newest));
+  return snap.roadmap[0].name === 'Doomed' && snap.phases.length === 1 &&
+         snap.breaks.length === 1 && snap.sessions.length === 1 && snap.docs.length === 1;
+})());
 check('the uploaded file is removed from disk',
   (await globalThis.fetch('/files/' + encodeURIComponent(doomedDoc.stored))).status === 404);
 const shared = (await sql("SELECT phase_ids FROM notes WHERE id='n-shared'"))[0];

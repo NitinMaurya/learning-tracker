@@ -1,5 +1,7 @@
-# uploads and the database stay out of git (§1.7: no PDFs in the repo)
+# uploads and the database stay out of git (spec 1.7: no PDFs in the repo)
 files/
-ai-lab.db
-ai-lab.db-wal
-ai-lab.db-shm
+learning-tracker.db
+learning-tracker.db-wal
+learning-tracker.db-shm
+ai-lab.db*
+trash/

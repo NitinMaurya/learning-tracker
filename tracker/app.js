@@ -18,6 +18,14 @@ const NEXT_ACTION = {
 
 const SECTION_DEFAULTS = { progress: true, concepts: true, log: true, queue: true, parked: false };
 
+// Storage keys were prefixed ai-lab- before the rename; carry them over once so a
+// running timer, the open roadmaps and the selected track survive the change.
+for (const k of ['sections', 'timer', 'track', 'collapsed', 'drawer', 'view']) {
+  const old = localStorage.getItem(`ai-lab-${k}`);
+  if (old !== null && localStorage.getItem(`lt-${k}`) === null) localStorage.setItem(`lt-${k}`, old);
+  if (old !== null) localStorage.removeItem(`ai-lab-${k}`);
+}
+
 let state = {
   tab: 'dashboard',
   open: null,          // expanded concept id
@@ -29,14 +37,14 @@ let state = {
   confirmDel: null,
   seKind: 'build',
   dragId: null,
-  drawer: localStorage.getItem('ai-lab-drawer') === '1',
-  view: localStorage.getItem('ai-lab-view') || 'list',
-  track: localStorage.getItem('ai-lab-track') || null,
-  collapsed: JSON.parse(localStorage.getItem('ai-lab-collapsed') || '{}'),
-  sections: { ...SECTION_DEFAULTS, ...JSON.parse(localStorage.getItem('ai-lab-sections') || '{}') },
+  drawer: localStorage.getItem('lt-drawer') === '1',
+  view: localStorage.getItem('lt-view') || 'list',
+  track: localStorage.getItem('lt-track') || null,
+  collapsed: JSON.parse(localStorage.getItem('lt-collapsed') || '{}'),
+  sections: { ...SECTION_DEFAULTS, ...JSON.parse(localStorage.getItem('lt-sections') || '{}') },
 };
 
-const saveSections = () => localStorage.setItem('ai-lab-sections', JSON.stringify(state.sections));
+const saveSections = () => localStorage.setItem('lt-sections', JSON.stringify(state.sections));
 
 function toast(msg) {
   if (!msg) return;
@@ -58,10 +66,10 @@ const relDay = (d) => {
 /* ---------- session timer ---------- */
 
 const TIMER_MS = 60 * 60 * 1000; // one hour
-let timer = JSON.parse(localStorage.getItem('ai-lab-timer') || 'null'); // {id, num, name, startedAt, kind}
+let timer = JSON.parse(localStorage.getItem('lt-timer') || 'null'); // {id, num, name, startedAt, kind}
 
 const persistTimer = () =>
-  timer ? localStorage.setItem('ai-lab-timer', JSON.stringify(timer)) : localStorage.removeItem('ai-lab-timer');
+  timer ? localStorage.setItem('lt-timer', JSON.stringify(timer)) : localStorage.removeItem('lt-timer');
 
 const remainingMs = () => (timer ? Math.max(0, TIMER_MS - (Date.now() - timer.startedAt)) : 0);
 const clock = (ms) => {
@@ -285,7 +293,8 @@ function treeRail(phases) {
           ? `<div class="rm-confirm">
               <p>Delete <b>${esc(r.name)}</b> with ${r.tracks.length} track${r.tracks.length === 1 ? '' : 's'},
                 ${all.length} concept${all.length === 1 ? '' : 's'} and everything attached to them?
-                Uploaded files are removed from disk. This cannot be undone.</p>
+                Uploaded files are removed from disk. A snapshot is written to
+                <span class="mono">tracker/trash/</span> first, so this is recoverable.</p>
               <div class="row">
                 <button class="btn danger" data-action="confirm-del-roadmap" data-id="${r.id}">delete</button>
                 <button class="btn" data-action="cancel-del-roadmap">cancel</button>
@@ -748,7 +757,7 @@ function renderSql() {
     <section class="panel open">
       <div class="panel-head" style="cursor:default">
         <span class="title">sqlite console</span>
-        <span class="count">ai-lab.db</span>
+        <span class="count">learning-tracker.db</span>
         <span class="right">
           <button class="btn" data-action="backup" title="download every table as JSON">${icon('download')} backup</button>
           <button class="btn" data-action="restore" title="replace the database from a JSON backup">${icon('upload')} restore</button>
@@ -829,7 +838,7 @@ const GRAPH_CTX = {
   onOpen(id) {
     state.view = 'list';
     state.open = id;
-    localStorage.setItem('ai-lab-view', 'list');
+    localStorage.setItem('lt-view', 'list');
     render().then(() => document.querySelector('.concept.open')?.scrollIntoView({ block: 'center' }));
   },
 };
@@ -876,13 +885,13 @@ document.addEventListener('click', async (e) => {
     case 'toggle-drawer':
     case 'close-drawer':
       state.drawer = a === 'toggle-drawer' ? !state.drawer : false;
-      localStorage.setItem('ai-lab-drawer', state.drawer ? '1' : '0');
+      localStorage.setItem('lt-drawer', state.drawer ? '1' : '0');
       return render();
 
     case 'select-track':
       state.track = id;
       state.open = null;
-      localStorage.setItem('ai-lab-track', id);
+      localStorage.setItem('lt-track', id);
       return render();
     case 'del-roadmap':
       state.confirmDel = id;
@@ -897,14 +906,15 @@ document.addEventListener('click', async (e) => {
       state.confirmDel = null;
       if (gone.includes(state.track)) {
         state.track = null;
-        localStorage.removeItem('ai-lab-track');
+        localStorage.removeItem('lt-track');
       }
       return after(`deleted ${res.concepts} concept${res.concepts === 1 ? '' : 's'}` +
-        (res.files ? ` and ${res.files} file${res.files === 1 ? '' : 's'}` : ''));
+        (res.files ? ` and ${res.files} file${res.files === 1 ? '' : 's'}` : '') +
+        `, saved to trash/${res.snapshot}`);
     }
     case 'toggle-roadmap':
       state.collapsed[id] = !state.collapsed[id];
-      localStorage.setItem('ai-lab-collapsed', JSON.stringify(state.collapsed));
+      localStorage.setItem('lt-collapsed', JSON.stringify(state.collapsed));
       return render();
     case 'done': {
       const p = (await model()).find((x) => x.id === id);
@@ -926,7 +936,7 @@ document.addEventListener('click', async (e) => {
     }
     case 'set-view':
       state.view = el.dataset.view;
-      localStorage.setItem('ai-lab-view', state.view);
+      localStorage.setItem('lt-view', state.view);
       return render();
     case 'auto-layout': {
       const phases = await model();
@@ -948,11 +958,11 @@ document.addEventListener('click', async (e) => {
       const p = (await all(`SELECT track_id FROM phases WHERE id = ${q(id)}`))[0];
       if (p?.track_id) {
         state.track = p.track_id;
-        localStorage.setItem('ai-lab-track', p.track_id);
+        localStorage.setItem('lt-track', p.track_id);
       }
       state.open = id;
       state.view = 'list';
-      localStorage.setItem('ai-lab-view', 'list');
+      localStorage.setItem('lt-view', 'list');
       state.sections.concepts = true;
       saveSections();
       await render();
@@ -1254,7 +1264,7 @@ document.addEventListener('keydown', async (e) => {
     }
     if (state.drawer) {
       state.drawer = false;
-      localStorage.setItem('ai-lab-drawer', '0');
+      localStorage.setItem('lt-drawer', '0');
       return render();
     }
   }
@@ -1315,7 +1325,7 @@ async function backup() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `ai-lab-tracker-${today()}.json`;
+  a.download = `learning-tracker-${today()}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
   toast('downloaded. Uploaded files are not in the JSON');
@@ -1324,7 +1334,7 @@ async function backup() {
 $('#restoreFile').onchange = async (e) => {
   const f = e.target.files[0];
   if (!f) return;
-  if (!confirm('Replace everything in ai-lab.db with this backup?')) return;
+  if (!confirm('Replace everything in learning-tracker.db with this backup?')) return;
   await load(JSON.parse(await f.text()));
   e.target.value = '';
   await after('restored');
@@ -1338,7 +1348,7 @@ $('#restoreFile').onchange = async (e) => {
     // the shell ships without icon markup; one source for glyphs is icons.js
     const closeBtn = $('#drawer .drawer-head .iconbtn');
     if (closeBtn) closeBtn.innerHTML = icon('close');
-    $('#status').textContent = 'sqlite · ai-lab.db';
+    $('#status').textContent = 'sqlite · learning-tracker.db';
     showTab('dashboard');
     tick();
   } catch (err) {

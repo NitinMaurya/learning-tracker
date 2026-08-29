@@ -1,4 +1,4 @@
-# ai-lab tracker — product truth
+# learning tracker - product truth
 
 *Written from the build history of this repo and the author's stated intent. Assumptions are labelled.*
 

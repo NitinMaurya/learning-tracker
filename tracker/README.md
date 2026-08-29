@@ -1,14 +1,14 @@
-# ai-lab tracker
+# learning tracker
 
 A local webapp for tracking progress against `spec.md`. Plain HTML + JavaScript,
-no build step, no npm. Storage is a real SQLite file: `tracker/ai-lab.db`, and
+no build step, no npm. Storage is a real SQLite file: `tracker/learning-tracker.db`, and
 uploaded documents land in `tracker/files/`.
 
 ## Run
 
 ```bash
 python3 tracker/server.py                  # serves the app and opens the browser
-python3 tracker/server.py --port 9000 --db ~/ai-lab.db --no-open
+python3 tracker/server.py --port 9000 --db ~/learning-tracker.db --no-open
 ```
 
 Stdlib only — nothing to install. First run seeds concepts 01–05 and the parked
@@ -16,7 +16,7 @@ registry from `seed.json` (transcribed from `spec.md` §4 and §6). It seeds onl
 when the table is empty, so restarting never touches your work.
 
 ```bash
-sqlite3 tracker/ai-lab.db "SELECT num, status, last_touched FROM concepts ORDER BY pos;"
+sqlite3 tracker/learning-tracker.db "SELECT num, status, last_touched FROM concepts ORDER BY pos;"
 ```
 
 ## Look
@@ -63,8 +63,9 @@ a checkbox forever; that is the "earned, not scheduled" rule expressed in data.
 
 The left rail is the roadmap tree; picking a track swaps the concepts column. Deleting a
 roadmap (the x on its header) asks first, naming how many tracks and concepts go with it,
-then removes them in one transaction along with their breaks, claims, sources, documents
-(files included), edges, confusions and sessions. A note tagged to a surviving concept in
+then writes a full JSON snapshot to `tracker/trash/` and removes them in one transaction
+along with their breaks, claims, sources, documents (files included), edges, confusions and
+sessions. The snapshot is the undo: it holds every row that was deleted. A note tagged to a surviving concept in
 another roadmap keeps living: it only loses the tag.
 `spec.md`'s units live in their own roadmap, separate from anything imported.
 
@@ -145,4 +146,4 @@ node tracker/test-ui.mjs
 | `app.js` | dashboard + sql views, timer, drag-reorder, all actions |
 | `seed.json` | concepts and parked registry from `spec.md` |
 | `test-ui.mjs` | UI regression test |
-| `ai-lab.db`, `files/` | your data |
+| `learning-tracker.db`, `files/` | your data |

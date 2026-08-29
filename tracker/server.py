@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""ai-lab tracker — static file server + SQLite JSON API.
+"""learning tracker - static file server + SQLite JSON API.
 
 Zero dependencies (stdlib only). The database is a real file next to this
-script: tracker/ai-lab.db — open it with `sqlite3 ai-lab.db` any time.
+script: tracker/learning-tracker.db. Open it with sqlite3 any time.
 
-    python3 server.py [--port 8777] [--db ai-lab.db]
+    python3 server.py [--port 8777] [--db learning-tracker.db]
 """
 
 import argparse
@@ -25,6 +25,7 @@ TABLES = ["phases", "breaks", "claims", "confusions", "parked", "sources", "sess
           "notes", "docs", "edges", "roadmaps", "tracks"]
 
 FILES = os.path.join(HERE, "files")   # uploaded documents live here
+TRASH = os.path.join(HERE, "trash")   # snapshots taken before a destructive delete
 MAX_UPLOAD = 50 * 1024 * 1024
 
 SCHEMA = """
@@ -75,7 +76,9 @@ CREATE TABLE IF NOT EXISTS edges (
 CREATE VIEW IF NOT EXISTS concepts AS SELECT * FROM phases;
 """
 
-DB_PATH = os.path.join(HERE, "ai-lab.db")
+DEFAULT_DB = os.path.join(HERE, "learning-tracker.db")
+LEGACY_DB = os.path.join(HERE, "ai-lab.db")
+DB_PATH = DEFAULT_DB
 
 
 def connect():
@@ -119,7 +122,7 @@ def seed(con):
     """First run only: load the phases and parked registry from spec.md."""
     with open(os.path.join(HERE, "seed.json")) as f:
         data = json.load(f)
-    con.execute("INSERT INTO roadmaps VALUES ('rm-spec','ai-lab spec',"
+    con.execute("INSERT INTO roadmaps VALUES ('rm-spec','spec.md',"
                 "'The build units. Every one starts with a build and closes on a blank page.',0)")
     con.execute("INSERT INTO tracks VALUES ('tr-spec','rm-spec','','core build path',0)")
     for pos, p in enumerate(data["phases"]):
@@ -258,6 +261,7 @@ class Handler(SimpleHTTPRequestHandler):
         rid = self._body().get("id")
         con = connect()
         try:
+            snapshot = self._snapshot_roadmap(con, rid)
             tracks = [r["id"] for r in con.execute("SELECT id FROM tracks WHERE roadmap_id = ?", (rid,))]
             concepts, nums = [], []
             if tracks:
@@ -307,7 +311,52 @@ class Handler(SimpleHTTPRequestHandler):
             con.commit()
         finally:
             con.close()
-        return self._json({"ok": True, "tracks": len(tracks), "concepts": len(concepts), "files": files})
+        return self._json({"ok": True, "tracks": len(tracks), "concepts": len(concepts),
+                           "files": files, "snapshot": os.path.basename(snapshot)})
+
+    def _snapshot_roadmap(self, con, rid):
+        """Write everything a roadmap owns to trash/ before deleting it.
+
+        The delete cascade cannot be undone from the app, so it is never the only
+        copy: this file is a plain JSON dump that /api/restore-shaped tooling or a
+        few INSERTs can put back.
+        """
+        tracks = [dict(r) for r in con.execute("SELECT * FROM tracks WHERE roadmap_id = ?", (rid,))]
+        data = {
+            "roadmap": [dict(r) for r in con.execute("SELECT * FROM roadmaps WHERE id = ?", (rid,))],
+            "tracks": tracks,
+        }
+        tids = [t["id"] for t in tracks]
+        concepts = []
+        if tids:
+            concepts = [dict(r) for r in con.execute(
+                "SELECT * FROM phases WHERE track_id IN (%s)" % ",".join("?" * len(tids)), tids)]
+        data["phases"] = concepts
+
+        cids = [c["id"] for c in concepts]
+        nums = [c["num"] for c in concepts]
+        if cids:
+            cq = ",".join("?" * len(cids))
+            for table in ("breaks", "claims", "sources", "docs"):
+                data[table] = [dict(r) for r in con.execute(
+                    "SELECT * FROM %s WHERE phase_id IN (%s)" % (table, cq), cids)]
+            data["edges"] = [dict(r) for r in con.execute(
+                "SELECT * FROM edges WHERE from_id IN (%s) OR to_id IN (%s)" % (cq, cq), cids + cids)]
+            data["notes"] = [dict(r) for r in con.execute("SELECT * FROM notes")
+                             if any(t in cids for t in (r["phase_ids"] or "").split(","))]
+        if nums:
+            nq = ",".join("?" * len(nums))
+            for table in ("confusions", "sessions"):
+                data[table] = [dict(r) for r in con.execute(
+                    "SELECT * FROM %s WHERE phase_num IN (%s)" % (table, nq), nums)]
+
+        name = re.sub(r"[^A-Za-z0-9._-]", "-", (data["roadmap"][0]["name"] if data["roadmap"] else rid))[:60]
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        os.makedirs(TRASH, exist_ok=True)
+        path = os.path.join(TRASH, "%s-%s.json" % (stamp, name))
+        with open(path, "w") as f:
+            json.dump(data, f, indent=1)
+        return path
 
     def _reset(self):
         """Wipe every table and reseed. Used by test-ui.mjs; destructive."""
@@ -348,10 +397,17 @@ def main():
     args = ap.parse_args()
     DB_PATH = os.path.abspath(args.db)
 
+    # the database was called ai-lab.db before the rename; adopt it in place
+    if DB_PATH == DEFAULT_DB and not os.path.exists(DB_PATH) and os.path.exists(LEGACY_DB):
+        for suffix in ("", "-wal", "-shm"):
+            if os.path.exists(LEGACY_DB + suffix):
+                os.rename(LEGACY_DB + suffix, DB_PATH + suffix)
+        print("adopted %s as %s" % (os.path.basename(LEGACY_DB), os.path.basename(DB_PATH)))
+
     init_db()
     url = "http://127.0.0.1:%d/" % args.port
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print("ai-lab tracker\n  db    %s\n  files %s\n  url   %s\nctrl-c to stop" % (DB_PATH, FILES, url))
+    print("learning tracker\n  db    %s\n  files %s\n  url   %s\nctrl-c to stop" % (DB_PATH, FILES, url))
     if not args.no_open:
         webbrowser.open(url)
     try:
