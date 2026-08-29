@@ -101,6 +101,7 @@ check('empty blocks wait behind an add bar instead of filling the page',
 for (const key of ['confusions', 'notes', 'sources', 'documents'])
   await fire('click', mk({ action: 'reveal', id: c1, key }));
 check('asking for a block shows it', has('confusions') && has('A note is a claim') && has('one line: what it changed'));
+check('the sources block is named for links too', has('sources and links'));
 
 // breaks + trace
 const b1 = (await sql(`SELECT id FROM breaks WHERE phase_id='${c1}' ORDER BY pos`))[0].id;
@@ -222,6 +223,17 @@ check('a light concept shows hours and no unit counts', has('3h') && !/KV cache[
 await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));
 check('opening a light concept shows its practical checkpoint',
   has('practical checkpoint') && has('compute the cache for a 7B model'));
+check('every concept offers a youtube search for itself',
+  has('youtube.com/results?search_query=KV%20cache%20mechanics'));
+check('a short name borrows its track for context', await (async () => {
+  await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,track_id)"
+    + " VALUES ('k-short','R7','Reranking','not started','','','','','',9,'tr-2')");
+  await fire('click', mk({ action: 'toggle-phase', id: 'k-short' }));
+  const ok = has('search_query=Reranking%20Inference%20%26%20GPU');
+  await sql("DELETE FROM phases WHERE id='k-short'");
+  await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));   // leave the fixture as we found it
+  return ok;
+})());
 check('a light concept opens without the unit spine',
   !/KV cache[\s\S]*?break on purpose/.test(dash()) && has('data-key="build"') && has('This one is a checkbox'));
 check('a light concept hides an empty gate', !/KV cache[\s\S]{0,600}>gate</.test(dash()));

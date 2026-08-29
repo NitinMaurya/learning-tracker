@@ -35,7 +35,7 @@ gate, wall, breaks bar, exit counts, last touched; click to jump) and the
 concepts themselves on the right. Expanding a concept gives
 the whole unit: gate, build, verify, break-on-purpose (each failure with an
 inline trace editor), wall, earned concepts, the two exit lists, and then its
-own **confusions**, **notes**, **sources**, and **documents**. Drag a concept by
+own **confusions**, **notes**, **sources and links**, and **documents**. Drag a concept by
 its handle to reorder.
 
 Everything that is not a concept — sessions, the interest queue (every open

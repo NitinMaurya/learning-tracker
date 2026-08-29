@@ -32,6 +32,7 @@ const PATHS = {
   download: '<path d="M8 2.5v7.5M4.8 7l3.2 3 3.2-3M3 13h10"/>',
   upload: '<path d="M8 10.5V3M4.8 6l3.2-3 3.2 3M3 13h10"/>',
   warning: '<path d="M8 2.8 14 12.8H2z"/><path d="M8 6.6v3M8 11.2v.05"/>',
+  video: '<rect x="1.5" y="3.5" width="13" height="9" rx="2.4"/><path d="M6.7 6.4 10.2 8l-3.5 1.6z" fill="currentColor" stroke="none"/>',
 };
 
 export const icon = (name, opts) => (PATHS[name] ? S(PATHS[name], opts) : '');

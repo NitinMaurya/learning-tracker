@@ -506,3 +506,7 @@ tr:last-child td { border-bottom: none; }
 
 .addbar { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding-top: var(--s2); }
 .addbar .note { text-transform: uppercase; letter-spacing: .05em; font-family: var(--mono); font-size: 11px; }
+
+.field.lookup { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.field.lookup .btn { text-decoration: none; }
+.field.lookup .note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -257,7 +257,7 @@ async function renderDashboard() {
         ${panel('concepts',
           track ? `${roadmap ? esc(roadmap.name.split(' - ')[0].trim()) + ' / ' : ''}${esc(track.title)}` : 'concepts',
           `${trackDone}/${inTrack.length}`,
-          state.view === 'graph' ? graphHtml(inTrack, trackEdges) : conceptsHtml(inTrack, phases),
+          state.view === 'graph' ? graphHtml(inTrack, trackEdges) : conceptsHtml(inTrack, phases, track),
           { flush: state.view === 'list',
             head: `<span class="seg">
               <button data-action="set-view" data-view="list" aria-pressed="${state.view === 'list'}">${icon('list')} list</button>
@@ -336,7 +336,22 @@ function treeRail(phases) {
 
 /* ---------- concepts ---------- */
 
-function conceptsHtml(phases, allPhases = phases) {
+const searchQuery = (p, track) => {
+  const name = p.name.trim().replace(/[.:;,]+$/, '');
+  const subject = track ? track.title.replace(/^\d+[.\s]*/, '').trim() : '';
+  return name.split(/\s+/).length <= 2 && subject ? `${name} ${subject}` : name;
+};
+
+const lookupRow = (p, track) => {
+  const q = searchQuery(p, track);
+  return `<div class="field lookup">
+    <a class="btn" href="https://www.youtube.com/results?search_query=${encodeURIComponent(q)}"
+       target="_blank" rel="noreferrer" title="youtube: ${esc(q)}">${icon('video')} search youtube</a>
+    <span class="note">${esc(q)}</span>
+  </div>`;
+};
+
+function conceptsHtml(phases, allPhases = phases, track = null) {
   const cards = phases
     .map((p, i) => {
       const blocked = blockedBy(phases, i);
@@ -374,7 +389,7 @@ function conceptsHtml(phases, allPhases = phases) {
       const optional = [
         ['confusions', p.confusions.length, 'confusion'],
         ['notes', p.notes.length, 'note'],
-        ['sources', p.sources.length, 'source'],
+        ['sources', p.sources.length, 'link'],
         ['documents', p.docs.length, 'file'],
       ];
       // A block that holds something stays. One you opened by mistake can be put away.
@@ -395,6 +410,7 @@ function conceptsHtml(phases, allPhases = phases) {
                 <div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
             : ''}
           ${hasGate ? `<div class="field"><label>gate</label><div class="ro">${esc(p.gate)}</div></div>` : ''}
+          ${lookupRow(p, track)}
 
           ${unitOpen ? unitFields(p) : ''}
           ${shows('confusions', p.confusions.length) ? confusionsBlock(p) : ''}
@@ -615,7 +631,7 @@ function noteEditor(n, p) {
 
 function sourcesBlock(p) {
   return `<div class="field">
-    <label>sources</label>
+    <label>sources and links</label>
     <ul class="list">
       ${p.sources
         .map(
