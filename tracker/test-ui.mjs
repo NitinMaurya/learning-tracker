@@ -137,15 +137,23 @@ const exported = await (await globalThis.fetch('/api/export')).json();
 check('backup export returns every table', Object.keys(exported).length === 12 && exported.phases.length === 5);
 await fire('click', { closest: (sel) => (sel === '#tabs button' ? { dataset: { tab: 'dashboard' } } : null) });
 
-// notes, tagged across concepts
+// notes: title and body, nothing else
 await fire('click', mk({ action: 'new-note', phase: c1 }));
+check('the note editor is a title and a body', has('note-title') && has('note-body') && !has('tag-note'));
 stub('#note-title').value = 'the schema is a contract the model breaks';
 stub('#note-body').value = 'feed errors back into the loop instead of throwing';
-await fire('click', mk({ action: 'tag-note', id: c2 }));
 await fire('click', mk({ action: 'save-note', id: 'new', phase: c1 }));
 const note = (await sql('SELECT * FROM notes'))[0];
-check('note saved with multi-concept tags', !!note && note.phase_ids.includes(c1) && note.phase_ids.includes(c2));
+check('a new note is filed against the concept it was written in', !!note && note.phase_ids === c1);
 check('note body rendered under its claim', has('feed errors back into the loop'));
+// notes tagged to several concepts still exist in the data; editing must not drop them
+await sql(`UPDATE notes SET phase_ids='${c1},${c2}' WHERE id='${note.id}'`);
+await fire('click', mk({ action: 'edit-note', id: note.id, phase: c1 }));
+stub('#note-title').value = 'the schema is a contract the model breaks';
+stub('#note-body').value = 'feed errors back into the loop instead of throwing';
+await fire('click', mk({ action: 'save-note', id: note.id, phase: c1 }));
+check('editing a multi-concept note keeps its other concepts',
+  (await sql(`SELECT phase_ids FROM notes WHERE id='${note.id}'`))[0].phase_ids === `${c1},${c2}`);
 
 // sources are per concept
 stub(`#sr-url-${c1}`).value = 'https://example.com/tools';
@@ -219,6 +227,10 @@ check('a light concept opens without the unit spine',
 check('a light concept hides an empty gate', !/KV cache[\s\S]{0,600}>gate</.test(dash()));
 await fire('click', mk({ action: 'reveal', id: 'k-I3', key: 'build' }));
 check('adding a build turns it into a unit', has('break on purpose'));
+await fire('click', mk({ action: 'unreveal', id: 'k-I3', key: 'build' }));
+check('a mistaken click can be put away again', !/KV cache[\s\S]*?break on purpose/.test(dash()));
+await fire('click', mk({ action: 'reveal', id: 'k-I3', key: 'notes' }));
+check('an opened empty block offers to close itself', /data-action="unreveal"[^>]*data-key="notes"/.test(dash()));
 await fire('click', mk({ action: 'done', id: 'k-I3' }, { checked: true }));
 check('ticking a light concept closes it without the exit-list rule',
   (await sql("SELECT status FROM phases WHERE id='k-I3'"))[0].status === 'closed');

@@ -377,7 +377,11 @@ function conceptsHtml(phases, allPhases = phases) {
         ['sources', p.sources.length, 'source'],
         ['documents', p.docs.length, 'file'],
       ];
-      const addable = optional.filter(([key, n]) => !shows(key, n));
+      // A block that holds something stays. One you opened by mistake can be put away.
+      const toggles = [
+        ...(unit ? [] : [['build', !!state.reveal[`${p.id}:build`], 'build']]),
+        ...optional.filter(([, n]) => !n).map(([key, , word]) => [key, !!state.reveal[`${p.id}:${key}`], word]),
+      ];
 
       return `<article class="concept open ${p.status === 'closed' ? 'is-closed' : ''}" data-card="${p.id}">${row}
         <div class="cbody">
@@ -398,14 +402,13 @@ function conceptsHtml(phases, allPhases = phases) {
           ${shows('sources', p.sources.length) ? sourcesBlock(p) : ''}
           ${shows('documents', p.docs.length) ? docsBlock(p) : ''}
 
-          ${addable.length || !unitOpen
+          ${toggles.length
             ? `<div class="addbar">
                 <span class="note">add</span>
-                ${!unitOpen
-                  ? `<button class="btn" data-action="reveal" data-id="${p.id}" data-key="build">${icon('plus')} build</button>`
-                  : ''}
-                ${addable.map(([key, , word]) =>
-                  `<button class="btn quiet" data-action="reveal" data-id="${p.id}" data-key="${key}">${icon('plus')} ${word}</button>`).join('')}
+                ${toggles.map(([key, on, word]) =>
+                  `<button class="btn ${on ? '' : 'quiet'}" aria-pressed="${on}"
+                     data-action="${on ? 'unreveal' : 'reveal'}" data-id="${p.id}" data-key="${key}"
+                     title="${on ? 'put this away again' : ''}">${on ? icon('close') : icon('plus')} ${word}</button>`).join('')}
               </div>
               ${!unitOpen
                 ? `<p class="note" style="margin-top:8px">This one is a checkbox: tick it when you can explain it and did the checkpoint.
@@ -566,7 +569,7 @@ function notesBlock(p, phases) {
 
   const list = p.notes
     .map((n) => {
-      if (state.edit?.kind === 'note' && state.edit.id === n.id) return `<li>${noteEditor(n, p, phases)}</li>`;
+      if (state.edit?.kind === 'note' && state.edit.id === n.id) return `<li>${noteEditor(n, p)}</li>`;
       const others = (n.phase_ids || '')
         .split(',')
         .filter((x) => x && x !== p.id)
@@ -589,31 +592,21 @@ function notesBlock(p, phases) {
       <span class="right"><button class="btn quiet" data-action="new-note" data-phase="${p.id}">${icon('plus')} note</button></span>
     </div>
     <ul class="list">
-      ${editingNew ? `<li>${noteEditor(null, p, phases)}</li>` : ''}
-      ${list || (editingNew ? '' : '<li class="empty">A note is a claim, not a summary. The title states it, the body defends it to a smarter colleague.</li>')}
+      ${editingNew ? `<li>${noteEditor(null, p)}</li>` : ''}
+      ${list || (editingNew ? '' : '<li class="empty">A note is a claim, not a summary.</li>')}
     </ul>
   </div>`;
 }
 
-function noteEditor(n, p, phases) {
-  const tags = state.noteTags || [];
+function noteEditor(n, p) {
   return `<div class="grow">
     <input type="text" id="note-title" aria-label="claim"
       placeholder="the claim, e.g. kv-cache memory is linear in batch x context" value="${esc(n ? n.title : '')}" />
     <textarea id="note-body" style="margin-top:8px;min-height:120px"
       placeholder="defend it to a smarter colleague">${esc(n ? n.body : '')}</textarea>
-    <div class="row wrap" style="margin-top:10px;gap:5px">
-      <span class="note">belongs to</span>
-      ${phases
-        .map((x) => `<button class="btn quiet" data-action="tag-note" data-id="${x.id}"
-          aria-pressed="${tags.includes(x.id)}"
-          style="${tags.includes(x.id) ? 'color:var(--accent);border-color:var(--accent-line);background:var(--accent-wash)' : ''}">${esc(x.num)}</button>`)
-        .join('')}
-    </div>
     <div class="row" style="margin-top:10px">
       <button class="btn primary" data-action="save-note" data-id="${n ? n.id : 'new'}" data-phase="${p.id}">save</button>
       <button class="btn" data-action="cancel-edit">cancel</button>
-      <span class="note">Tag every concept it explains. A note on KV-cache belongs to three at once.</span>
     </div>
   </div>`;
 }
@@ -1006,6 +999,9 @@ document.addEventListener('click', async (e) => {
     case 'reveal':
       state.reveal[`${id}:${el.dataset.key}`] = true;
       return render();
+    case 'unreveal':
+      delete state.reveal[`${id}:${el.dataset.key}`];
+      return render();
     case 'toggle-phase':
       state.open = state.open === id ? null : id;
       state.edit = null;
@@ -1093,11 +1089,6 @@ document.addEventListener('click', async (e) => {
       state.noteTags = (n?.phase_ids || '').split(',').filter(Boolean);
       return render();
     }
-    case 'tag-note':
-      state.noteTags = state.noteTags.includes(id)
-        ? state.noteTags.filter((x) => x !== id)
-        : [...state.noteTags, id];
-      return render();
     case 'save-note': {
       const title = $('#note-title').value.trim();
       const body = $('#note-body').value;

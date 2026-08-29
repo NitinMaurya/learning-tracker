@@ -57,7 +57,9 @@ roadmap   AI Engineer Practical Roadmap     several can coexist
 A concept starts light: a title, its planned hours and a practical checkpoint,
 ticked when you can explain it and did the checkpoint. Opening one shows the
 checkpoint and an add bar, nothing else. Blocks appear when they hold something
-or when you ask for them, so an empty concept is never ten empty forms. When a concept is one you
+or when you ask for them, so an empty concept is never ten empty forms. The add
+bar is a toggle: a block you opened by mistake and left empty can be put away
+again, while one holding content stays. When a concept is one you
 actually **build**, open it and fill in build / verify / break-on-purpose / wall
 / exit — it then carries sessions, confusions, notes, sources and documents, and
 the spec's rules kick in (no closing without both exit lists). Most concepts stay
@@ -103,9 +105,11 @@ the timer recorded it.
 
 ## Notes and documents
 
-A note is a claim, not a summary: the title states it, the body defends it. A
-note can be tagged to several concepts at once — a note on KV-cache arithmetic
-belongs to three — and shows up under each, with pills pointing at the others.
+A note is a claim, not a summary: the title states it, the body defends it. The
+editor is a title and a body, nothing else; a new note is filed against the
+concept you wrote it in. Notes can still belong to several concepts in the data
+(they show a tag for each of the others, and editing preserves them), but the
+picker is gone from the editor.
 
 Documents attach per concept by drag-and-drop or file picker (50 MB each),
 stored under `tracker/files/` and referenced from the database. §1.7 keeps PDFs
