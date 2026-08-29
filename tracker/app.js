@@ -342,15 +342,6 @@ const searchQuery = (p, track) => {
   return name.split(/\s+/).length <= 2 && subject ? `${name} ${subject}` : name;
 };
 
-const lookupRow = (p, track) => {
-  const q = searchQuery(p, track);
-  return `<div class="field lookup">
-    <a class="btn" href="https://www.youtube.com/results?search_query=${encodeURIComponent(q)}"
-       target="_blank" rel="noreferrer" title="youtube: ${esc(q)}">${icon('video')} search youtube</a>
-    <span class="note">${esc(q)}</span>
-  </div>`;
-};
-
 function conceptsHtml(phases, allPhases = phases, track = null) {
   const cards = phases
     .map((p, i) => {
@@ -374,9 +365,9 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
           ${blocked && p.status !== 'closed' ? `<span class="status gated" title="gated: ${esc(blocked)} is not closed" aria-label="gated: ${esc(blocked)} is not closed">${icon('wall', { size: 13 })}</span>` : ''}
           ${unit ? `<span class="counts">${done}/${p.breaks.length} broken · ${p.can.length}/${p.cannot.length} exit${openConf ? ` · <span class="warn">${openConf} open</span>` : ''}</span>` : ''}
           ${unit || p.status !== 'not started' ? statusHtml(p.status) : ''}
-          <select data-action="status" data-id="${p.id}" aria-label="status">
-            ${STATUSES.map((s) => `<option ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}
-          </select>
+          <a class="btn quiet yt" href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery(p, track))}"
+             target="_blank" rel="noreferrer" data-action="lookup"
+             title="youtube: ${esc(searchQuery(p, track))}">${icon('video')} youtube</a>
         </span>
       </div>`;
 
@@ -405,12 +396,19 @@ function conceptsHtml(phases, allPhases = phases, track = null) {
             ? `<div class="warnbox">${icon('warning')} Gate not paid. ${esc(blocked)} is not closed.</div>`
             : ''}
 
+          <div class="field lookup">
+            <label style="margin:0">status</label>
+            <select data-action="status" data-id="${p.id}" aria-label="status">
+              ${STATUSES.map((s) => `<option ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+            <span class="note">${esc(NEXT_ACTION[p.status][0])}. ${esc(NEXT_ACTION[p.status][1])}</span>
+          </div>
+
           ${p.practical
             ? `<div class="field"><label>practical checkpoint</label>
                 <div class="ro checkpoint">${icon('flask')}<span>${esc(p.practical)}</span></div></div>`
             : ''}
           ${hasGate ? `<div class="field"><label>gate</label><div class="ro">${esc(p.gate)}</div></div>` : ''}
-          ${lookupRow(p, track)}
 
           ${unitOpen ? unitFields(p) : ''}
           ${shows('confusions', p.confusions.length) ? confusionsBlock(p) : ''}
@@ -923,6 +921,8 @@ document.addEventListener('click', async (e) => {
   if (!el) return;
   const a = el.dataset.action;
   const id = el.dataset.id;
+
+  if (a === 'lookup') return;   // a real link; let the browser have it
 
   switch (a) {
     case 'toggle-drawer':

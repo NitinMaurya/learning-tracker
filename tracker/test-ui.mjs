@@ -223,8 +223,13 @@ check('a light concept shows hours and no unit counts', has('3h') && !/KV cache[
 await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));
 check('opening a light concept shows its practical checkpoint',
   has('practical checkpoint') && has('compute the cache for a 7B model'));
-check('every concept offers a youtube search for itself',
-  has('youtube.com/results?search_query=KV%20cache%20mechanics'));
+check('every concept row carries a youtube search for itself',
+  /class="btn quiet yt"[^>]*youtube\.com\/results\?search_query=KV%20cache%20mechanics/.test(dash()));
+check('the row no longer carries a status dropdown',
+  !/<select[^>]*data-action="status"[\s\S]{0,80}<\/select>[\s\S]{0,40}<\/span>\s*<\/div>\s*<article/.test(dash()) &&
+  dash().indexOf('data-action="status"') > dash().indexOf('class="cbody"'));
+check('status is set inside the open concept, with what to do next',
+  /<label style="margin:0">status<\/label>[\s\S]{0,400}data-action="status"/.test(dash()));
 check('a short name borrows its track for context', await (async () => {
   await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,track_id)"
     + " VALUES ('k-short','R7','Reranking','not started','','','','','',9,'tr-2')");

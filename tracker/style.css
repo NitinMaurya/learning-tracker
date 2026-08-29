@@ -510,3 +510,7 @@ tr:last-child td { border-bottom: none; }
 .field.lookup { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .field.lookup .btn { text-decoration: none; }
 .field.lookup .note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.crow .yt { flex: none; }
+.crow .yt:hover { color: var(--accent); border-color: var(--accent-line); }
+.field.lookup label { flex: none; }
