@@ -117,12 +117,26 @@ main { padding: 22px 18px 100px; max-width: 1300px; margin: 0 auto; }
   .cols2 > .rail { position: static; }
 }
 
-.rail-list { padding: 4px 0; }
+.rmgroup { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.rmgroup:last-of-type { border-bottom: none; }
+.rmhead {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; cursor: pointer; user-select: none;
+}
+.rmhead:hover .rmname { color: var(--fg); }
+.rmname {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--fg2); font-weight: 600;
+}
+.rmadd { padding: 8px 12px; }
+.rmadd input { font-size: 11.5px; padding: 5px 8px; }
+
+.rail-list { padding: 0 0 4px; }
 .rail-list > li {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 13px;
+  padding: 5px 13px 5px 26px;
   border-bottom: none;
   cursor: pointer;
   font-family: var(--mono);
@@ -140,7 +154,15 @@ main { padding: 22px 18px 100px; max-width: 1300px; margin: 0 auto; }
   color: var(--accent);
 }
 .rail-list > li.now .dim { color: var(--accent); opacity: .65; }
-.railtimer { margin-left: auto; color: var(--accent); font-size: 11px; }
+.railtimer { margin-left: auto; color: var(--accent); font-size: 9px; }
+.rail-list > li .mini { margin-left: auto; }
+.rail-list > li .railtimer + .mini { margin-left: 6px; }
+.rail-list > li .txt { flex: none; max-width: 155px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.phase-head.light .phase-name { font-size: 12.5px; }
+.phase-head input[type=checkbox] { margin-top: 0; }
+.phase-card:has(.phase-head.light) { background: transparent; border-color: var(--line); }
+.phase-card:has(.phase-head.light):hover { background: var(--bg2); }
 
 /* ---------- side panel ---------- */
 

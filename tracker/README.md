@@ -38,8 +38,26 @@ badge counts open confusions so the queue still nags without taking up room.
 Sections collapse and remember their state. `⏎` submits every add-field, `esc`
 cancels an inline editor, `⌘⏎` saves a note.
 
-The concepts section has a **list / graph** toggle. In graph view each concept
-is a draggable node in a vertical path; drag from a node's bottom dot down onto
+## Roadmaps, tracks, concepts
+
+```
+roadmap   AI Engineer Practical Roadmap     several can coexist
+└─ track  5. Inference & GPU Engineering    grouping inside a roadmap
+   └─ concept  I3 KV cache mechanics        the leaf you tick or build
+```
+
+A concept starts light: a title, its planned hours and a practical checkpoint,
+ticked when you can explain it and did the checkpoint. When a concept is one you
+actually **build**, open it and fill in build / verify / break-on-purpose / wall
+/ exit — it then carries sessions, confusions, notes, sources and documents, and
+the spec's rules kick in (no closing without both exit lists). Most concepts stay
+a checkbox forever; that is the "earned, not scheduled" rule expressed in data.
+
+The left rail is the roadmap tree; picking a track swaps the concepts column.
+`spec.md`'s units live in their own roadmap, separate from anything imported.
+
+The concepts section has a **list / graph** toggle. In graph view the selected
+track's concepts are draggable nodes in a vertical path; drag from a node's bottom dot down onto
 another to say *this one comes first*. Those edges are not decoration:
 
 - concept order is a topological sort of the graph (ties break on current

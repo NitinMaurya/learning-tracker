@@ -29,6 +29,8 @@ let state = {
   dragId: null,
   drawer: localStorage.getItem('ai-lab-drawer') === '1',
   view: localStorage.getItem('ai-lab-view') || 'list',
+  track: localStorage.getItem('ai-lab-track') || null,
+  collapsed: JSON.parse(localStorage.getItem('ai-lab-collapsed') || '{}'),
   sections: { ...SECTION_DEFAULTS, ...JSON.parse(localStorage.getItem('ai-lab-sections') || '{}') },
 };
 
@@ -133,7 +135,7 @@ const barHtml = (done, total) => {
 /* ---------- data ---------- */
 
 async function model() {
-  const [phases, breaks, claims, sources, notes, docs, confusions, edges, topics] = await Promise.all([
+  const [phases, breaks, claims, sources, notes, docs, confusions, edges, roadmaps, tracks] = await Promise.all([
     all('SELECT * FROM phases ORDER BY pos'),
     all('SELECT * FROM breaks ORDER BY pos'),
     all('SELECT * FROM claims ORDER BY created_at'),
@@ -142,7 +144,8 @@ async function model() {
     all('SELECT * FROM docs ORDER BY created_at DESC'),
     all('SELECT * FROM confusions ORDER BY created_at DESC'),
     all('SELECT * FROM edges'),
-    all('SELECT * FROM topics ORDER BY pos'),
+    all('SELECT * FROM roadmaps ORDER BY pos'),
+    all('SELECT * FROM tracks ORDER BY pos'),
   ]);
   for (const p of phases) {
     p.breaks = breaks.filter((b) => b.phase_id === p.id);
@@ -153,10 +156,13 @@ async function model() {
     p.docs = docs.filter((d) => d.phase_id === p.id);
     p.confusions = confusions.filter((c) => c.phase_num === p.num);
     p.prereqs = edges.filter((e) => e.to_id === p.id).map((e) => e.from_id);
-    p.topics = topics.filter((t) => t.phase_id === p.id);
   }
   phases.confusions = confusions;
   phases.edges = edges;
+  phases.tracks = tracks;
+  phases.roadmaps = roadmaps;
+  for (const t of tracks) t.concepts = phases.filter((p) => p.track_id === t.id).sort((a, b) => a.pos - b.pos);
+  for (const r of roadmaps) r.tracks = tracks.filter((t) => t.roadmap_id === r.id);
   return phases;
 }
 
@@ -175,6 +181,11 @@ function blockedBy(phases, i) {
 
 const canClose = (p) => p.can.length > 0 && p.cannot.length > 0;
 
+// A concept only has to satisfy the spec's exit rule once it is something you built.
+const isUnit = (p) =>
+  !!(p.build || p.wall || p.breaks.length || p.can.length || p.cannot.length ||
+     p.notes.length || p.docs.length || p.sources.length || p.confusions.length);
+
 /* ---------- dashboard ---------- */
 
 async function renderDashboard() {
@@ -188,21 +199,28 @@ async function renderDashboard() {
   const firedParked = parked.filter((p) => p.fired).length;
   const current = phases.find((p) => p.status === 'walled') || phases.find((p) => p.status === 'building');
 
+  // selection: explicit choice, else the track you are working in, else the first
+  let track = phases.tracks.find((t) => t.id === state.track);
+  if (!track) track = phases.tracks.find((t) => current && t.id === current.track_id) || phases.tracks[0];
+  state.track = track?.id || null;
+  const inTrack = track ? track.concepts : [];
+
   const chip = $('#nowchip');
   if (current) {
     chip.hidden = false;
-    chip.innerHTML = `now: <b>concept ${esc(current.num)}</b> · ${esc(current.status)}`;
+    chip.innerHTML = `now: <b>${esc(current.num)} ${esc(current.name)}</b> · ${esc(current.status)}`;
   } else chip.hidden = true;
 
-  const nextUp = current || phases.find((p) => p.status !== 'closed');
+  const nextUp = current || inTrack.find((p) => p.status !== 'closed');
   const act = NEXT_ACTION[nextUp ? nextUp.status : 'closed'];
+  const roadmap = phases.roadmaps.find((r) => r.id === track?.roadmap_id);
 
   $('#tab-dashboard').innerHTML = `
     ${nextUp
       ? `<div class="now">
           <div>
             <div class="lbl">current</div>
-            <div class="who">concept ${esc(nextUp.num)} — ${esc(nextUp.name)}</div>
+            <div class="who">${esc(nextUp.num)} — ${esc(nextUp.name)}</div>
           </div>
           ${statusPill(nextUp.status)}
           <div class="do grow"><b>${act[0]}.</b> <span class="dim">${act[1]}</span></div>
@@ -215,11 +233,14 @@ async function renderDashboard() {
 
     <div class="cols2">
       <div class="rail">
-        ${section('progress', 'progress', null, progressRail(phases), { pad: false })}
+        ${section('progress', 'roadmaps', null, treeRail(phases), { pad: false })}
       </div>
       <div>
-    ${section('concepts', 'concepts', `${phases.length}`,
-      state.view === 'graph' ? graphHtml(phases, phases.edges) : phasesHtml(phases), {
+    ${section('concepts', track ? `${roadmap ? roadmap.name.split('—')[0].trim() + ' / ' : ''}${track.title}` : 'concepts',
+      `${inTrack.filter((p) => p.status === 'closed').length}/${inTrack.length}`,
+      state.view === 'graph'
+        ? graphHtml(inTrack, phases.edges.filter((e) => inTrack.some((p) => p.id === e.from_id) && inTrack.some((p) => p.id === e.to_id)))
+        : phasesHtml(inTrack, phases), {
       head: `<span class="seg">
           <button data-action="set-view" data-view="list" class="${state.view === 'list' ? 'on' : ''}">list</button>
           <button data-action="set-view" data-view="graph" class="${state.view === 'graph' ? 'on' : ''}">graph</button>
@@ -229,7 +250,11 @@ async function renderDashboard() {
       </div>
     </div>`;
 
-  if (state.view === 'graph') mountGraph($('#graph'), phases, phases.edges, GRAPH_CTX);
+  if (state.view === 'graph') {
+    mountGraph($('#graph'), inTrack,
+      phases.edges.filter((e) => inTrack.some((p) => p.id === e.from_id) && inTrack.some((p) => p.id === e.to_id)),
+      GRAPH_CTX);
+  }
 
   $('#drawer-body').innerHTML = `
     ${section('log', 'sessions', null, sessionForm(sessions))}
@@ -243,32 +268,44 @@ async function renderDashboard() {
   $('#backdrop').hidden = !state.drawer;
 }
 
-/* ---------- progress rail ---------- */
+/* ---------- rail: roadmap > track tree ---------- */
 
-function progressRail(phases) {
-  const current = phases.find((p) => p.status === 'walled') || phases.find((p) => p.status === 'building');
-  return `<ul class="list rail-list">
-    ${phases
-      .map((p) => {
-        const now = current && current.id === p.id;
-        const cls = [
-          'row-link',
-          now ? 'now' : '',
-          state.open === p.id ? 'here' : '',
-          p.status === 'closed' ? 'done' : '',
-        ].filter(Boolean).join(' ');
-        return `<li class="${cls}" data-action="open-phase" data-id="${p.id}" title="${esc(p.status)}">
-          <span class="txt"><span class="dim">${esc(p.num)}</span> ${esc(p.name)}</span>
-          ${timer && timer.id === p.id ? '<span class="railtimer">⏱</span>' : ''}
-        </li>`;
-      })
-      .join('')}
-  </ul>`;
+function treeRail(phases) {
+  return `${phases.roadmaps
+    .map((r) => {
+      const collapsed = state.collapsed[r.id];
+      const all = r.tracks.flatMap((t) => t.concepts);
+      const done = all.filter((p) => p.status === 'closed').length;
+      return `<div class="rmgroup">
+        <div class="rmhead" data-action="toggle-roadmap" data-id="${r.id}">
+          <span class="chev" style="${collapsed ? '' : 'transform:rotate(90deg)'}">▶</span>
+          <span class="rmname">${esc(r.name)}</span>
+          <span class="right dim mini">${done}/${all.length}</span>
+        </div>
+        ${collapsed ? '' : `<ul class="list rail-list">
+          ${r.tracks
+            .map((t) => {
+              const n = t.concepts.length;
+              const d = t.concepts.filter((p) => p.status === 'closed').length;
+              const hot = t.concepts.some((p) => p.status === 'building' || p.status === 'walled');
+              return `<li class="row-link ${state.track === t.id ? 'here' : ''} ${d === n && n ? 'done' : ''}"
+                  data-action="select-track" data-id="${t.id}">
+                <span class="txt">${t.num ? `<span class="dim">${esc(t.num)}</span> ` : ''}${esc(t.title)}</span>
+                ${hot ? '<span class="railtimer">●</span>' : ''}
+                <span class="dim mini">${d}/${n}</span>
+              </li>`;
+            })
+            .join('')}
+        </ul>`}
+      </div>`;
+    })
+    .join('')}
+    <div class="rmadd"><input type="text" id="rm-new" placeholder="+ roadmap  ⏎" data-action="add-roadmap" /></div>`;
 }
 
 /* ---------- concepts ---------- */
 
-function phasesHtml(phases) {
+function phasesHtml(phases, allPhases = phases) {
   const cards = phases
     .map((p, i) => {
       const blocked = blockedBy(phases, i);
@@ -277,17 +314,21 @@ function phasesHtml(phases) {
       const openConf = p.confusions.filter((c) => !c.resolved).length;
       const running = timer && timer.id === p.id;
 
-      const head = `<div class="phase-head" data-action="toggle-phase" data-id="${p.id}"
+      const unit = isUnit(p);
+      const head = `<div class="phase-head ${unit ? '' : 'light'}" data-action="toggle-phase" data-id="${p.id}"
           draggable="true" data-drag="${p.id}" title="drag to reorder">
         <span class="grip" title="drag to reorder">⠿</span>
+        <input type="checkbox" data-action="done" data-id="${p.id}" ${p.status === 'closed' ? 'checked' : ''}
+          title="done — you can explain it and did the checkpoint" />
         <span class="chev" style="${open ? 'transform:rotate(90deg)' : ''}">▶</span>
         <span class="phase-name"><span class="n">${esc(p.num)}</span> ${esc(p.name)}</span>
-        ${statusPill(p.status)}
+        ${p.hours ? `<span class="dim mini">${p.hours}h</span>` : ''}
+        ${unit || p.status !== 'not started' ? statusPill(p.status) : ''}
         ${blocked && p.status !== 'closed' ? `<span class="pill locked">gated · ${esc(blocked)}</span>` : ''}
         ${running ? `<span class="pill running">⏱ <span id="timer-count">${clock(remainingMs())}</span></span>` : ''}
         <span class="right">
           <span class="dim mini counts">
-            ${p.topics.length ? `${p.topics.filter((t) => t.done).length}/${p.topics.length} topics · ` : ''}${done}/${p.breaks.length} broken · ${p.can.length}✓ ${p.cannot.length}✗${openConf ? ` · <span class="warnc">${openConf}?</span>` : ''}${p.notes.length ? ` · ${p.notes.length} notes` : ''}${p.docs.length ? ` · ${p.docs.length} files` : ''}
+            ${unit ? `${done}/${p.breaks.length} broken · ${p.can.length}✓ ${p.cannot.length}✗` : ''}${openConf ? ` · <span class="warnc">${openConf}?</span>` : ''}${p.notes.length ? ` · ${p.notes.length} notes` : ''}${p.docs.length ? ` · ${p.docs.length} files` : ''}
           </span>
           ${running
             ? `<button class="mini-btn stop" data-action="stop-timer">■ stop</button>`
@@ -309,6 +350,7 @@ function phasesHtml(phases) {
         <div class="phase-body">
           ${running ? timerPanel() : ''}
           ${gateWarn}
+          ${p.practical ? `<div class="field"><label>practical checkpoint</label><div class="ro">🧪 ${esc(p.practical)}</div></div>` : ''}
           <div class="field"><label>gate</label><div class="ro">${esc(p.gate || 'none')}</div></div>
           ${['build', 'verify_txt', 'wall', 'earned']
             .map(
@@ -319,8 +361,6 @@ function phasesHtml(phases) {
               </div>`
             )
             .join('')}
-
-          ${topicsBlock(p)}
 
           <div class="field">
             <label>break on purpose</label>
@@ -349,7 +389,7 @@ function phasesHtml(phases) {
 
           <hr />
           ${confusionsBlock(p)}
-          ${notesBlock(p, phases)}
+          ${notesBlock(p, allPhases)}
           ${sourcesBlock(p)}
           ${docsBlock(p)}
         </div>
@@ -411,37 +451,6 @@ const claimItem = (c) => `<li>
   <span class="txt"><span class="main">${esc(c.text)}</span></span>
   <button class="x danger" data-action="del-claim" data-id="${c.id}">✕</button>
 </li>`;
-
-/* ---------- topics (imported curriculum) ---------- */
-
-function topicsBlock(p) {
-  if (!p.topics.length) return '';
-  const done = p.topics.filter((t) => t.done);
-  const hours = p.topics.reduce((n, t) => n + (t.hours || 0), 0);
-  const left = p.topics.filter((t) => !t.done).reduce((n, t) => n + (t.hours || 0), 0);
-  return `<div class="field">
-    <label>topics
-      <span class="dim" style="text-transform:none;letter-spacing:0;float:right">
-        ${done.length}/${p.topics.length} · ${Math.round(left * 10) / 10}h left of ${Math.round(hours * 10) / 10}h
-      </span>
-    </label>
-    <div class="bar" style="margin-bottom:9px"><i style="width:${Math.round((done.length / p.topics.length) * 100)}%"></i></div>
-    <ul class="list topic-list">
-      ${p.topics
-        .map(
-          (t) => `<li class="${t.done ? 'checked' : ''}">
-            <input type="checkbox" data-action="topic" data-id="${t.id}" data-phase="${p.id}" ${t.done ? 'checked' : ''} />
-            <span class="txt">
-              <span class="main"><span class="tcode">${esc(t.code)}</span> ${esc(t.title)} <span class="dim">${t.hours}h</span></span>
-              ${t.practical ? `<span class="sub">🧪 ${esc(t.practical)}</span>` : ''}
-            </span>
-          </li>`
-        )
-        .join('')}
-    </ul>
-    <div class="note" style="margin-top:6px">Tick a topic only when you can explain it and have done the checkpoint — not because you read it.</div>
-  </div>`;
-}
 
 /* ---------- confusions (per concept) ---------- */
 
@@ -861,6 +870,33 @@ document.addEventListener('click', async (e) => {
       localStorage.setItem('ai-lab-drawer', state.drawer ? '1' : '0');
       return render();
 
+    case 'select-track':
+      state.track = id;
+      state.open = null;
+      localStorage.setItem('ai-lab-track', id);
+      return render();
+    case 'toggle-roadmap':
+      state.collapsed[id] = !state.collapsed[id];
+      localStorage.setItem('ai-lab-collapsed', JSON.stringify(state.collapsed));
+      return render();
+    case 'done': {
+      const p = (await model()).find((x) => x.id === id);
+      if (el.checked && isUnit(p) && !canClose(p)) {
+        el.checked = false;
+        return toast("can't close — both exit lists need entries");
+      }
+      await run(`UPDATE phases SET status = ${el.checked ? "'closed'" : "'not started'"},
+        last_touched = ${q(today())} WHERE id = ${q(id)}`);
+      return after('');
+    }
+    case 'add-track': {
+      const t = $('#tr-new').value.trim();
+      if (!t) return;
+      const rm = el.dataset.roadmap;
+      const pos = (((await all(`SELECT max(pos) AS m FROM tracks WHERE roadmap_id = ${q(rm)}`))[0].m) ?? -1) + 1;
+      await run(`INSERT INTO tracks VALUES (${q(uid())}, ${q(rm)}, '', ${q(t)}, ${pos})`);
+      return after('track added');
+    }
     case 'set-view':
       state.view = el.dataset.view;
       localStorage.setItem('ai-lab-view', state.view);
@@ -881,7 +917,12 @@ document.addEventListener('click', async (e) => {
       saveSections();
       return render();
 
-    case 'open-phase':
+    case 'open-phase': {
+      const p = (await all(`SELECT track_id FROM phases WHERE id = ${q(id)}`))[0];
+      if (p?.track_id) {
+        state.track = p.track_id;
+        localStorage.setItem('ai-lab-track', p.track_id);
+      }
       state.open = id;
       state.view = 'list';
       localStorage.setItem('ai-lab-view', 'list');
@@ -890,6 +931,7 @@ document.addEventListener('click', async (e) => {
       await render();
       document.querySelector('.phase-card.is-open')?.scrollIntoView({ block: 'center' });
       return;
+    }
     case 'toggle-phase':
       state.open = state.open === id ? null : id;
       state.edit = null;
@@ -903,11 +945,6 @@ document.addEventListener('click', async (e) => {
     case 'stop-timer':
       e.preventDefault();
       return stopTimer(false);
-
-    case 'topic':
-      await run(`UPDATE topics SET done = ${el.checked ? 1 : 0} WHERE id = ${q(id)}`);
-      await touch(el.dataset.phase);
-      return after('');
 
     /* breaks */
     case 'break':
@@ -944,8 +981,9 @@ document.addEventListener('click', async (e) => {
       const num = $('#np-num').value.trim();
       const name = $('#np-name').value.trim();
       if (!num || !name) return toast('num and name required');
-      const pos = (((await all('SELECT max(pos) AS m FROM phases'))[0].m) ?? -1) + 1;
-      await run(`INSERT INTO phases VALUES (${q(uid())}, ${q(num)}, ${q(name)}, 'not started', '', '', '', '', '', ${pos}, NULL)`);
+      const pos = (((await all(`SELECT max(pos) AS m FROM phases WHERE track_id = ${q(state.track)}`))[0].m) ?? -1) + 1;
+      await run(`INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,last_touched,track_id)
+        VALUES (${q(uid())}, ${q(num)}, ${q(name)}, 'not started', '', '', '', '', '', ${pos}, NULL, ${q(state.track)})`);
       state.newPhase = false;
       return after('concept added');
     }
@@ -1168,7 +1206,7 @@ document.addEventListener('drop', async (e) => {
   state.dragId = null;
   if (dragged === targetId) return render();
 
-  const ids = (await all('SELECT id FROM phases ORDER BY pos')).map((r) => r.id).filter((x) => x !== dragged);
+  const ids = (await all(`SELECT id FROM phases WHERE track_id = ${q(state.track)} ORDER BY pos`)).map((r) => r.id).filter((x) => x !== dragged);
   const at = ids.indexOf(targetId) + (before ? 0 : 1);
   ids.splice(at, 0, dragged);
   for (let i = 0; i < ids.length; i++) await run(`UPDATE phases SET pos = ${i} WHERE id = ${q(ids[i])}`);
@@ -1227,6 +1265,14 @@ document.addEventListener('keydown', async (e) => {
   if (el.id === 'timer-note') return document.querySelector('[data-action="stop-timer"]')?.click();
   if (el.id === 'edit-box') return document.querySelector('[data-action="save-resolution"]')?.click();
   if (el.id === 'note-title') return document.querySelector('[data-action="save-note"]')?.click();
+  if (el.dataset.action === 'add-roadmap' && v) {
+    const pos = (((await all('SELECT max(pos) AS m FROM roadmaps'))[0].m) ?? -1) + 1;
+    const id = uid();
+    await run(`INSERT INTO roadmaps VALUES (${q(id)}, ${q(v)}, '', ${pos})`);
+    await run(`INSERT INTO tracks VALUES (${q(uid())}, ${q(id)}, '', 'first track', 0)`);
+    return after('roadmap added');
+  }
+  if (el.dataset.action === 'add-track') return document.querySelector('[data-action="add-track"]')?.click();
   if (el.id === 'pk-topic' || el.id === 'pk-trigger') return document.querySelector('[data-action="add-parked"]').click();
   if (el.id === 'np-num' || el.id === 'np-name') return document.querySelector('[data-action="add-phase"]').click();
 });

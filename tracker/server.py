@@ -22,7 +22,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 TABLES = ["phases", "breaks", "claims", "confusions", "parked", "sources", "sessions",
-          "notes", "docs", "edges", "topics"]
+          "notes", "docs", "edges", "roadmaps", "tracks"]
 
 FILES = os.path.join(HERE, "files")   # uploaded documents live here
 MAX_UPLOAD = 50 * 1024 * 1024
@@ -62,9 +62,11 @@ CREATE TABLE IF NOT EXISTS docs (
   id TEXT PRIMARY KEY, phase_id TEXT, filename TEXT, stored TEXT,
   size INTEGER, mime TEXT, created_at TEXT
 );
-CREATE TABLE IF NOT EXISTS topics (
-  id TEXT PRIMARY KEY, phase_id TEXT, code TEXT, title TEXT, hours REAL,
-  practical TEXT, done INTEGER DEFAULT 0, pos INTEGER
+CREATE TABLE IF NOT EXISTS roadmaps (
+  id TEXT PRIMARY KEY, name TEXT, note TEXT, pos INTEGER
+);
+CREATE TABLE IF NOT EXISTS tracks (
+  id TEXT PRIMARY KEY, roadmap_id TEXT, num TEXT, title TEXT, pos INTEGER
 );
 CREATE TABLE IF NOT EXISTS edges (
   id TEXT PRIMARY KEY, from_id TEXT, to_id TEXT
@@ -92,7 +94,10 @@ def migrate(con):
     """Additive column migrations for databases created by earlier versions."""
     for table, column, ddl in [("sources", "phase_id", "TEXT"),
                                ("phases", "x", "REAL"),
-                               ("phases", "y", "REAL")]:
+                               ("phases", "y", "REAL"),
+                               ("phases", "track_id", "TEXT"),
+                               ("phases", "hours", "REAL"),
+                               ("phases", "practical", "TEXT")]:
         cols = [r[1] for r in con.execute("PRAGMA table_info(%s)" % table)]
         if column not in cols:
             con.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, ddl))
@@ -114,11 +119,14 @@ def seed(con):
     """First run only: load the phases and parked registry from spec.md."""
     with open(os.path.join(HERE, "seed.json")) as f:
         data = json.load(f)
+    con.execute("INSERT INTO roadmaps VALUES ('rm-spec','ai-lab — spec.md',"
+                "'The build units. Every one starts with a build and closes on a blank page.',0)")
+    con.execute("INSERT INTO tracks VALUES ('tr-spec','rm-spec','','core build path',0)")
     for pos, p in enumerate(data["phases"]):
         pid = uid("phase", pos)
         con.execute(
             "INSERT INTO phases (id, num, name, status, gate, build, verify_txt, wall,"
-            " earned, pos, last_touched) VALUES (?,?,?,?,?,?,?,?,?,?,NULL)",
+            " earned, pos, last_touched, track_id) VALUES (?,?,?,?,?,?,?,?,?,?,NULL,'tr-spec')",
             (pid, p["num"], p["name"], "not started", p["gate"], p["build"],
              p["verify"], p["wall"], p["earned"], pos),
         )

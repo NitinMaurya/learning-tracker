@@ -78,7 +78,7 @@ const check = (label, cond) => { if (!cond) failures++; console.log((cond ? '  o
 const c1 = (await sql("SELECT id FROM concepts WHERE num='01'"))[0].id;
 const c2 = (await sql("SELECT id FROM concepts WHERE num='02'"))[0].id;
 
-check('renders concepts, not phases', has('concept 01') && !/>phases</.test(dash()));
+check('renders concepts, not phases', has('tool-calling') && !/>phases</.test(dash()));
 check('analytics stat strip is gone', !has('class="stats"'));
 // inline onclick handlers break document-level delegation — never reintroduce them
 check('no inline onclick blocks event delegation', !/onclick=/.test(dash()));
@@ -94,18 +94,6 @@ await fire('click', mk({ action: 'break', id: b1, phase: c1 }, { checked: true }
 await fire('click', mk({ action: 'edit-trace', id: b1 }));
 stub('#edit-box').value = 'ValidationError: city';
 await fire('click', mk({ action: 'save-trace', id: b1, phase: c1 }));
-// imported roadmap topics render as their own checklist and tick independently
-await sql(`INSERT INTO topics VALUES ('t-x1','${c1}','F1','problem framing',1.5,'classify 10 requirements',0,0)`);
-await fire('click', mk({ action: 'toggle-phase', id: c1 }));
-await fire('click', mk({ action: 'toggle-phase', id: c1 }));
-check('topics checklist renders with code, hours and checkpoint',
-  has('topic-list') && has('problem framing') && has('1.5h') && has('classify 10 requirements'));
-await fire('click', mk({ action: 'topic', id: 't-x1', phase: c1 }, { checked: true }));
-check('ticking a topic persists', (await sql("SELECT done FROM topics WHERE id='t-x1'"))[0].done === 1);
-check('topics are separate from break-on-purpose',
-  dash().indexOf('topic-list') < dash().indexOf('break on purpose'));
-await sql("DELETE FROM topics WHERE id='t-x1'");
-
 check('break + trace persist', (await sql(`SELECT done, trace FROM breaks WHERE id='${b1}'`))[0].trace === 'ValidationError: city');
 
 // confusions now live inside the concept
@@ -121,12 +109,11 @@ const drawer = () => captured['#drawer-body'] || '';
 check('sessions, queue and parked moved to the side panel',
   !has('interest queue') && !has('parked registry') && drawer().includes('interest queue') &&
   drawer().includes('parked registry') && drawer().includes('sessions'));
-check('progress sits in the left rail, concepts to its right',
+check('rail is a roadmap > track tree on the left, concepts to its right',
   dash().indexOf('class="rail"') < dash().indexOf('data-key="concepts"') &&
-  has('rail-list') && !has('<th>wall hit?</th>'));
-check('rail entries link to their concept', /class="row-link[^"]*" data-action="open-phase"/.test(dash()));
-check('rail shows names only — no pills, bars or counts inside it',
-  !/rail-list[\s\S]{0,900}(class="pill|class="bar|✓)/.test(dash()));
+  has('rmhead') && has('data-action="select-track"'));
+check('tracks show their own done count', /data-action="select-track"[\s\S]{0,300}0\/5/.test(dash()));
+
 
 // backup/restore belong to the sql tab, not the header
 await fire('click', { closest: (sel) => (sel === '#tabs button' ? { dataset: { tab: 'sql' } } : null) });
@@ -134,7 +121,7 @@ const sqlTab = captured['#tab-sql'] || '';
 check('backup/restore moved into the sql tab',
   sqlTab.includes('data-action="backup"') && sqlTab.includes('data-action="restore"'));
 const exported = await (await globalThis.fetch('/api/export')).json();
-check('backup export returns every table', Object.keys(exported).length === 11 && exported.phases.length === 5);
+check('backup export returns every table', Object.keys(exported).length === 12 && exported.phases.length === 5);
 await fire('click', { closest: (sel) => (sel === '#tabs button' ? { dataset: { tab: 'dashboard' } } : null) });
 
 // notes, tagged across concepts
@@ -171,8 +158,7 @@ check('document listed in the concept', has('trace.log'));
 await fire('click', mk({ action: 'start-timer', id: c1 }));
 check('timer starts and shows a countdown', has('timer-count') && !!JSON.parse(store['ai-lab-timer'] || 'null'));
 check('starting a session moves the concept to building', (await sql(`SELECT status FROM concepts WHERE id='${c1}'`))[0].status === 'building');
-check('rail highlights the concept being worked on, with a running-timer mark',
-  /<li class="row-link now[^"]*"[^>]*>[\s\S]{0,200}railtimer/.test(dash()));
+check('rail marks the track holding live work', has('railtimer'));
 stub('#timer-note').value = 'wired the first tool call';
 await fire('click', mk({ action: 'stop-timer' }));
 const sess = (await sql('SELECT * FROM sessions'))[0];
@@ -203,6 +189,30 @@ const dropTarget = { closest: (s) => (s === '.dropzone' ? null : targetCard) };
 await fire('drop', dropTarget, { clientY: 100, dataTransfer: { types: [], files: [] } });
 const after = (await sql('SELECT num FROM concepts ORDER BY pos')).map((r) => r.num).join(',');
 check(`drag reorder moved 01 after 02 (${before} → ${after})`, after.startsWith('02,01'));
+
+// ---- hierarchy: roadmaps > tracks > concepts ----
+await sql("INSERT INTO roadmaps VALUES ('rm-2','Imported roadmap','',1)");
+await sql("INSERT INTO tracks VALUES ('tr-2','rm-2','5','Inference & GPU',0)");
+await sql("INSERT INTO phases (id,num,name,status,gate,build,verify_txt,wall,earned,pos,track_id,hours,practical)"
+  + " VALUES ('k-I3','I3','KV cache mechanics','not started','','','','','',0,'tr-2',3.0,'compute the cache for a 7B model')");
+await fire('click', mk({ action: 'select-track', id: 'tr-2' }));
+check('selecting a track swaps the concepts column', has('KV cache mechanics') && !has('tool-calling'));
+check('a light concept shows hours and no unit counts', has('3h') && !/KV cache[\s\S]{0,300}broken/.test(dash()));
+await fire('click', mk({ action: 'toggle-phase', id: 'k-I3' }));
+check('opening a light concept shows its practical checkpoint',
+  has('practical checkpoint') && has('compute the cache for a 7B model'));
+await fire('click', mk({ action: 'done', id: 'k-I3' }, { checked: true }));
+check('ticking a light concept closes it without the exit-list rule',
+  (await sql("SELECT status FROM phases WHERE id='k-I3'"))[0].status === 'closed');
+const guard = mk({ action: 'done', id: c2 }, { checked: true });
+await fire('click', guard);
+check('a concept with real work still needs both exit lists to close',
+  (await sql(`SELECT status FROM phases WHERE id='${c2}'`))[0].status !== 'closed');
+check('graph is scoped to the selected track',
+  (await (async () => { await fire('click', mk({ action: 'set-view', view: 'graph' }));
+    const only = has('KV cache') && !has('tool-calling'); 
+    await fire('click', mk({ action: 'set-view', view: 'list' })); return only; })()));
+await fire('click', mk({ action: 'select-track', id: 'tr-spec' }));
 
 // ---- graph view ----
 const { topoOrder, edgePath, autoPos, mountGraph } = await import(new URL('./graph.js', import.meta.url).href);
